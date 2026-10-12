@@ -1,0 +1,17 @@
+{
+  "name": "hotdeal-backend",
+  "version": "0.3.0",
+  "private": true,
+  "description": "브라우저의 핫딜 새 글 알림과 목록 HTML을 받아 게시글 JSON API를 제공하는 로컬 백엔드",
+  "type": "module",
+  "engines": {
+    "node": ">=22.4.0"
+  },
+  "scripts": {
+    "start": "node main.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0"
+  }
+}
