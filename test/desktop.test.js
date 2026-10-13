@@ -31,6 +31,7 @@ class TestWorker extends EventEmitter {
         if (message.action === 'initialize') {
           this.runtime = await createServerRuntime(message.config, { source: this.source,
             log: (level, text) => this.emit('message', { type: 'log', level, message: text }) });
+          this.runtime.service.on('collected', ({ articles }) => this.emit('message', { type: 'articles-collected', articles }));
           await this.runtime.start();
           this.emit('message', { type: 'ready', baseUrl: this.runtime.api.baseUrl, status: this.runtime.service.getStatus() });
           reply({ ready: true });
@@ -278,4 +279,36 @@ test('article queries reject invalid pagination and report corrupt saved JSON wi
   await writeFile(file, '{broken');
   await assert.rejects(controller.getArticles(), /기존 파일을 보존/);
   assert.equal(await readFile(file, 'utf8'), '{broken');
+});
+
+test('new-post events follow successful persistence, exclude the initial list, deduplicate updates and survive restart', async (t) => {
+  let posts = [article];
+  let fail = false;
+  const { controller, workers, path } = await fixture(t, async () => {
+    if (fail) throw new Error('site unavailable');
+    return posts;
+  });
+  const events = [];
+  controller.on('new-articles', (articles) => events.push(articles));
+  await controller.start();
+  await workers[0].runtime.service.collectNow();
+  assert.equal(events.length, 0);
+  const next = { ...article, id: '124', url: 'https://arca.live/b/hotdeal/124', title: '신규 핫딜' };
+  posts = [next, { ...article, views: 99 }];
+  fail = true;
+  await workers[0].runtime.service.collectNow();
+  assert.equal(events.length, 0);
+  fail = false;
+  await workers[0].runtime.service.collectNow();
+  assert.deepEqual(events.map((batch) => batch.map(({ id }) => id)), [['124']]);
+  assert.equal(JSON.parse(await readFile(join(path, 'articles.json'), 'utf8')).articles[0].id, '124');
+  await workers[0].runtime.service.collectNow();
+  assert.equal(events.length, 1);
+  await controller.stop();
+  await controller.start();
+  await workers[1].runtime.service.collectNow();
+  assert.equal(events.length, 1);
+  posts = [{ ...next, id: '125', url: 'https://arca.live/b/hotdeal/125' }, next];
+  await workers[1].runtime.service.collectNow();
+  assert.deepEqual(events.at(-1).map(({ id }) => id), ['125']);
 });

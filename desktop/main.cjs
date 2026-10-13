@@ -1,12 +1,15 @@
-const { app, BrowserWindow, ipcMain, utilityProcess, shell, Menu, dialog, Tray } = require('electron');
+const { app, BrowserWindow, ipcMain, utilityProcess, shell, Menu, dialog, Tray, screen } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { mkdir } = require('node:fs/promises');
+const { FloatingNotifications } = require('./floating-notifications.cjs');
 
 let window;
 let controller;
 let tray;
 let trayStatus;
+let notifications;
+let notificationSettings;
 let quitting = false;
 let quitPending = false;
 const root = path.resolve(__dirname, '..');
@@ -24,6 +27,11 @@ function hideToTray() {
   if (quitting || quitPending) return;
   if (!tray || tray.isDestroyed()) throw new Error('트레이 아이콘을 사용할 수 없습니다.');
   if (window && !window.isDestroyed()) window.hide();
+}
+
+function openArticle(id) {
+  if (typeof id !== 'string' || !/^\d{1,30}$/.test(id)) throw new Error('게시글 ID가 올바르지 않습니다.');
+  return shell.openExternal(`https://arca.live/b/hotdeal/${id}`);
 }
 
 function updateTray(snapshot) {
@@ -54,6 +62,8 @@ else {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     const { readServerConfig } = await import('../src/server-config.js');
     const { ServerController } = await import('./server-controller.js');
+    const { loadNotificationSettings, saveNotificationSettings } = await import('./notification-settings.js');
+    const notificationSettingsPath = path.join(app.getPath('userData'), 'notification-settings.json');
     const config = readServerConfig({ ...process.env, SELENIUM_USER_AGENT: undefined }, root);
     controller = new ServerController({ config,
       spawnWorker: () => utilityProcess.fork(path.join(__dirname, 'server-worker.js'), [], {
@@ -61,12 +71,26 @@ else {
       }),
     });
     await controller.initialize();
+    try { notificationSettings = await loadNotificationSettings(notificationSettingsPath); }
+    catch (error) {
+      notificationSettings = { enabled: false, soundEnabled: true };
+      controller.log('error', `알림 설정 읽기 실패: ${error.message} 알림을 끈 상태로 시작합니다. 설정에서 다시 저장하세요.`);
+    }
     Menu.setApplicationMenu(null);
     window = new BrowserWindow({ width: 1160, height: 960, minWidth: 940, minHeight: 740,
       title: '핫딜 수집 관리자', icon, backgroundColor: '#0c111b', show: false,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    notifications = new FloatingNotifications({ BrowserWindow, ipcMain, screen, getMainWindow: () => window,
+      showMainWindow: () => { showWindow(); window.webContents.send('hotdeal:showArticles'); },
+      openArticle, getSettings: () => notificationSettings, log: (level, message) => controller.log(level, message),
+    });
+    controller.on('new-articles', (articles) => {
+      if (quitPending || quitting) return;
+      try { notifications.show(articles); }
+      catch (error) { controller.log('error', `새 글 알림 실패: ${error.message}`); }
+    });
     tray = new Tray(icon);
     tray.on('click', showWindow);
     tray.on('double-click', showWindow);
@@ -85,10 +109,16 @@ else {
       userAgent: (value) => controller.setUserAgent(value),
       articles: (query) => controller.getArticles(query),
       hideToTray,
-      openArticle: (id) => {
-        if (typeof id !== 'string' || !/^\d{1,30}$/.test(id)) throw new Error('게시글 ID가 올바르지 않습니다.');
-        return shell.openExternal(`https://arca.live/b/hotdeal/${id}`);
+      openArticle,
+      notificationSettings: () => notificationSettings,
+      setNotificationSettings: async (value) => {
+        const settings = await saveNotificationSettings(notificationSettingsPath, value);
+        notificationSettings = settings;
+        if (!settings.enabled) notifications.dismiss();
+        controller.log('info', `새 글 알림 ${settings.enabled ? '켜짐' : '꺼짐'} · 소리 ${settings.soundEnabled ? '켜짐' : '꺼짐'}`);
+        return settings;
       },
+      testNotification: () => { if (!quitPending) notifications.showDemo(); },
       clearLogs: () => { controller.clearLogs(); return controller.snapshot(); },
       openData: async () => { await mkdir(config.directory, { recursive: true }); const error = await shell.openPath(config.directory); if (error) throw new Error(error); },
     };
@@ -111,6 +141,7 @@ else {
     event.preventDefault();
     if (quitPending) return;
     quitPending = true;
+    notifications?.dismiss();
     updateTray(controller.snapshot());
     controller.stop().then(() => { quitting = true; app.quit(); }).catch((error) => {
       quitPending = false;
@@ -119,5 +150,8 @@ else {
       dialog.showErrorBox('서버 종료 대기', `서버 종료를 완료하지 못했습니다. 앱에서 상태를 확인하고 다시 중지하세요.\n${error.message}`);
     });
   });
-  app.on('will-quit', () => { if (tray && !tray.isDestroyed()) tray.destroy(); });
+  app.on('will-quit', () => {
+    notifications?.dispose();
+    if (tray && !tray.isDestroyed()) tray.destroy();
+  });
 }

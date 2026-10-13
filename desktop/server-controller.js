@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { ArticleStore, atomicWriteJson } from '../src/article-store.js';
 import { loadInterval, validInterval } from '../src/crawl-service.js';
 import { loadUserAgent, normalizeUserAgent } from '../src/browser-settings.js';
+import { NewArticleTracker } from './new-article-tracker.js';
 
 export class ServerController extends EventEmitter {
   #config;
@@ -16,6 +17,10 @@ export class ServerController extends EventEmitter {
   #requestId = 0;
   #logId = 0;
   #state;
+  #articleTracker = new NewArticleTracker();
+  #externalArticlesAt = null;
+  #pollBusy = false;
+  #generation = 0;
 
   constructor({ config, spawnWorker, fetchImpl = fetch }) {
     super();
@@ -86,6 +91,8 @@ export class ServerController extends EventEmitter {
   start() { return this.#queue(async () => {
     if (this.#state.phase === 'running') return this.snapshot();
     if (this.#child) throw new Error('이전 서버의 종료를 먼저 완료하세요.');
+    this.#generation++;
+    this.#externalArticlesAt = null;
     this.#state.phase = 'starting';
     this.#state.error = null;
     this.#publish();
@@ -93,6 +100,7 @@ export class ServerController extends EventEmitter {
       // Validate saved files on every start, preserving corrupt files for recovery.
       const store = new ArticleStore({ path: resolve(this.#config.directory, 'articles.json'), maxArticles: this.#config.maxArticles });
       await store.load();
+      this.#articleTracker = new NewArticleTracker(store.getSnapshot().articles);
       await loadInterval(resolve(this.#config.directory, 'settings.json'));
       this.#state.userAgent = await loadUserAgent(resolve(this.#config.directory, 'browser-settings.json'));
       if (this.#config.port) {
@@ -103,6 +111,10 @@ export class ServerController extends EventEmitter {
             existing.running === true && validInterval(existing.intervalSeconds)) {
           this.#state.phase = 'running';
           this.#state.owned = false;
+          // The attached server may use a different data folder: seed from its API.
+          const baseline = await this.#http('/api/articles?limit=1000&offset=0');
+          this.#articleTracker = new NewArticleTracker(baseline.articles);
+          this.#externalArticlesAt = baseline.updatedAt;
           this.#updateStatus(existing);
           this.log('info', '별도로 실행 중인 서버에 연결했습니다. 연결 해제 시 해당 서버는 계속 실행됩니다.');
           this.#poll = setInterval(() => { void this.#pollExternal(); }, 1500);
@@ -147,26 +159,44 @@ export class ServerController extends EventEmitter {
   }); }
 
   async #pollExternal() {
-    if (this.#state.owned || this.#state.phase !== 'running') return;
+    if (this.#pollBusy || this.#state.owned || this.#state.phase !== 'running') return;
+    this.#pollBusy = true;
+    const generation = this.#generation;
     try {
       const previous = this.#state.status;
       const status = await this.#http('/api/status');
-      if (this.#state.phase !== 'running' || this.#state.owned) return;
+      if (generation !== this.#generation || this.#state.phase !== 'running' || this.#state.owned) return;
       this.#updateStatus(status);
       if (status.lastSuccessAt && status.lastSuccessAt !== previous?.lastSuccessAt) this.log('info', `외부 서버 수집 완료: 총 보관 ${status.articleCount}개`);
       if (status.lastError?.at !== previous?.lastError?.at && status.lastError) this.log('error', status.lastError.message);
+      if (status.lastSuccessAt && status.lastSuccessAt !== this.#externalArticlesAt) {
+        try {
+          const snapshot = await this.#http('/api/articles?limit=1000&offset=0');
+          if (generation !== this.#generation || this.#state.phase !== 'running' || this.#state.owned) return;
+          this.#announceArticles(snapshot.articles);
+          this.#externalArticlesAt = snapshot.updatedAt;
+        } catch (error) {
+          if (generation === this.#generation && this.#state.phase === 'running') this.log('error', `외부 서버 새 글 확인 실패: ${error.message}`);
+        }
+      }
     } catch (error) {
-      if (this.#state.phase !== 'running' || this.#state.owned) return;
+      if (generation !== this.#generation || this.#state.phase !== 'running' || this.#state.owned) return;
       clearInterval(this.#poll);
       this.#poll = null;
       this.#state.phase = 'error';
       this.#state.error = `외부 서버 연결 끊김: ${error.message}`;
       this.#markStoppedStatus();
       this.log('error', this.#state.error);
-    }
+    } finally { this.#pollBusy = false; }
+  }
+
+  #announceArticles(articles) {
+    const added = this.#articleTracker.observe(articles);
+    if (added.length) this.emit('new-articles', added);
   }
 
   #onMessage(message) {
+    if (message.type === 'articles-collected' && this.#state.owned && ['starting', 'running'].includes(this.#state.phase)) this.#announceArticles(message.articles);
     if (message.type === 'log') this.log(message.level, message.message);
     if (message.type === 'status') this.#updateStatus(message.status);
     if (message.type === 'ready') {
@@ -201,6 +231,7 @@ export class ServerController extends EventEmitter {
   }
 
   stop() { return this.#queue(async () => {
+    this.#generation++;
     clearInterval(this.#poll);
     this.#poll = null;
     this.#state.phase = 'stopping';

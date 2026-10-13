@@ -56,6 +56,7 @@
           <div class="settings-tabs" role="tablist" aria-label="설정 종류">
             <button id="collection-tab" type="button" role="tab" aria-selected="true" aria-controls="collection-settings">수집</button>
             <button id="browser-tab" type="button" role="tab" aria-selected="false" aria-controls="browser-settings" tabindex="-1">브라우저</button>
+            <button id="notification-tab" type="button" role="tab" aria-selected="false" aria-controls="notification-settings" tabindex="-1">알림</button>
           </div>
           <div id="collection-settings" role="tabpanel" aria-labelledby="collection-tab">
           <form id="interval-form">
@@ -84,6 +85,20 @@
             </form>
             <div class="divider"></div>
             <p class="help">변경한 값은 다음 서버 시작부터 적용됩니다.</p>
+          </div>
+          <div id="notification-settings" role="tabpanel" aria-labelledby="notification-tab" hidden>
+            <form id="notification-form">
+              <label class="check-setting"><input id="notifications-enabled" type="checkbox" checked disabled> 새 게시글 플로팅 알림</label>
+              <label class="check-setting"><input id="notification-sound" type="checkbox" checked disabled> 작은 알림음 함께 재생</label>
+              <p class="help">수집 후 새 글을 발견하면 트레이에 숨긴 상태에서도 표시합니다. 여러 글은 한 알림으로 묶습니다.</p>
+              <button id="save-notifications" type="submit" class="wide" disabled>알림 설정 저장</button>
+              <p id="notification-status" class="saved" role="status">알림 설정을 불러오는 중입니다.</p>
+            </form>
+            <div class="divider"></div>
+            <button id="test-notification" type="button" class="wide">테스트 알림 표시</button>
+            <p class="help">서버 중지 상태에서도 테스트할 수 있습니다. 알림을 꺼도 미리보기는 표시되며, 소리는 저장된 설정을 따릅니다.</p>
+            <div class="divider"></div>
+            <p class="help">화면 오른쪽 아래에 8초간 표시합니다. 마우스를 올리면 유지하고, 제목을 누르면 원문을 엽니다.</p>
           </div>
         </aside>
 

@@ -11,6 +11,14 @@ contextBridge.exposeInMainWorld('hotdeal', {
   articles: (query) => invoke('articles', query), openArticle: (id) => invoke('openArticle', id),
   clearLogs: () => invoke('clearLogs'), openData: () => invoke('openData'),
   hideToTray: () => invoke('hideToTray'),
+  notificationSettings: () => invoke('notificationSettings'),
+  setNotificationSettings: (value) => invoke('setNotificationSettings', value),
+  testNotification: () => invoke('testNotification'),
+  onShowArticles: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('hotdeal:showArticles', listener);
+    return () => ipcRenderer.removeListener('hotdeal:showArticles', listener);
+  },
   onSnapshot: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
     ipcRenderer.on('hotdeal:snapshot', listener);

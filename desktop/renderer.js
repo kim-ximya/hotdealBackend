@@ -163,7 +163,34 @@ function bindTabs(tabs) {
   }
 }
 bindTabs([['deals-tab', 'deals-view'], ['settings-tab', 'settings-view']]);
-bindTabs([['collection-tab', 'collection-settings'], ['browser-tab', 'browser-settings']]);
+bindTabs([['collection-tab', 'collection-settings'], ['browser-tab', 'browser-settings'], ['notification-tab', 'notification-settings']]);
+function renderNotificationSettings(settings) {
+  $('notifications-enabled').checked = settings.enabled;
+  $('notification-sound').checked = settings.soundEnabled;
+  $('notification-status').textContent = `새 글 알림 ${settings.enabled ? '켜짐' : '꺼짐'} · 소리 ${settings.soundEnabled ? '켜짐' : '꺼짐'}`;
+  for (const id of ['notifications-enabled', 'notification-sound', 'save-notifications']) $(id).disabled = false;
+}
+window.hotdeal.notificationSettings().then(renderNotificationSettings).catch((error) => {
+  $('notification-status').textContent = `설정을 불러오지 못했습니다: ${error.message}`;
+});
+$('notification-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('save-notifications').disabled = true;
+  try {
+    renderNotificationSettings(await window.hotdeal.setNotificationSettings({
+      enabled: $('notifications-enabled').checked, soundEnabled: $('notification-sound').checked,
+    }));
+    toast('알림 설정을 저장했습니다. 바로 적용됩니다.');
+  } catch (error) { $('notification-status').textContent = error.message; }
+  finally { $('save-notifications').disabled = false; }
+});
+$('test-notification').addEventListener('click', async () => {
+  $('test-notification').disabled = true;
+  try { await window.hotdeal.testNotification(); }
+  catch (error) { $('notification-status').textContent = error.message; }
+  finally { $('test-notification').disabled = false; }
+});
+window.hotdeal.onShowArticles(() => $('deals-tab').click());
 $('open-data').addEventListener('click', () => action(() => window.hotdeal.openData()));
 $('clear-logs').addEventListener('click', () => action(() => window.hotdeal.clearLogs()));
 $('log-filter').addEventListener('change', () => { if (current) renderLogs(current); });

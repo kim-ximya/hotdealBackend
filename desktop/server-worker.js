@@ -15,6 +15,9 @@ process.parentPort.on('message', async ({ data: message }) => {
       if (initializing || closing) throw new Error('이미 초기화 중이거나 종료 중입니다.');
       initializing = (async () => {
         runtime = await createServerRuntime(message.config, { log: (level, text) => send({ type: 'log', level, message: text }) });
+        runtime.service.on('collected', ({ articles }) => {
+          if (!closing) send({ type: 'articles-collected', articles });
+        });
         if (closing) return;
         await runtime.start();
         if (closing) return;

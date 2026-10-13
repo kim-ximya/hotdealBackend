@@ -1,0 +1,19 @@
+:root{color-scheme:dark;font-family:"Segoe UI","Malgun Gothic",sans-serif;color:#e6edf5;font-size:12px}
+*{box-sizing:border-box}
+body{margin:0;padding:10px;background:transparent;overflow:hidden}
+.card{border:1px solid #36594f;border-top:3px solid #68e1c0;border-radius:13px;background:#131e29;box-shadow:0 4px 10px #0006;overflow:hidden}
+header{display:flex;align-items:center;gap:10px;padding:15px 16px 12px}
+.brand{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:#68e1c0;color:#073c32;font-size:21px;font-weight:800;flex-shrink:0}
+header strong{font-size:14px}header p{margin:4px 0 0;font-size:10px;color:#8b9bb0}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:transparent}
+button:focus-visible{outline:2px solid #68e1c0;outline-offset:-3px}
+.close{margin-left:auto;align-self:flex-start;font-size:22px;line-height:1;padding:0 3px;color:#9eb1c4}
+.articles{padding:0 10px}
+.article{display:block;text-align:left;width:100%;height:76px;padding:11px 8px;border-top:1px solid #283646;border-radius:5px;overflow:hidden}
+button.article:hover{background:#20332f}
+.article-meta{display:block;color:#68e1c0;font-size:10px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.article-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+footer{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:13px 16px;border-top:1px solid #283646;color:#8299ad;font-size:9px}
+footer button{color:#90e6cd;font-size:11px;padding:4px 0;white-space:nowrap}
+#error{color:#f1a5a5;font-size:10px;margin:0;padding:6px 16px}
+[hidden]{display:none!important}

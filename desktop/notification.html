@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; media-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>새 핫딜 알림</title>
+  <link rel="stylesheet" href="notification.css">
+  <script src="notification.js" defer></script>
+</head>
+<body>
+  <section class="card" aria-label="새 핫딜 알림">
+    <header><span class="brand" aria-hidden="true">H</span><div><strong id="heading">새 핫딜이 도착했습니다</strong><p id="summary">핫딜 수집 관리자</p></div><button id="close" class="close" aria-label="알림 닫기">×</button></header>
+    <div id="articles" class="articles"></div>
+    <p id="error" role="alert" hidden></p>
+    <footer><span id="detail">8초 후 닫힘 · 마우스를 올리면 유지</span><button id="open-list">목록 열기 ↗</button></footer>
+  </section>
+  <audio id="chime" preload="auto" src="assets/notification.wav"></audio>
+</body>
+</html>
