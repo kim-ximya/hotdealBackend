@@ -1,17 +1,20 @@
 {
   "name": "hotdeal-backend",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "브라우저의 핫딜 새 글 알림과 목록 HTML을 받아 게시글 JSON API를 제공하는 로컬 백엔드",
+  "description": "Selenium으로 핫딜 게시글을 주기적으로 수집·저장하는 JSON API 서버",
   "type": "module",
   "engines": {
     "node": ">=22.4.0"
   },
   "scripts": {
     "start": "node main.js",
+    "start:relay": "node relay-main.js",
+    "probe:selenium": "node scripts/selenium-probe/probe.js",
     "test": "node --test"
   },
   "dependencies": {
-    "cheerio": "^1.2.0"
+    "cheerio": "^1.2.0",
+    "selenium-webdriver": "^4.51.0"
   }
 }
