@@ -1,8 +1,0 @@
-{
-  "name": "hotdeal-selenium-probe",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "scripts": { "start": "node probe.js" },
-  "dependencies": { "selenium-webdriver": "^4.0.0" }
-}

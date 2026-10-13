@@ -9,8 +9,6 @@
   },
   "scripts": {
     "start": "node main.js",
-    "start:relay": "node relay-main.js",
-    "probe:selenium": "node scripts/selenium-probe/probe.js",
     "test": "node --test"
   },
   "dependencies": {
