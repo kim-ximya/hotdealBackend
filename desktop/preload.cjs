@@ -7,6 +7,7 @@ const invoke = async (action, value) => {
 contextBridge.exposeInMainWorld('hotdeal', {
   snapshot: () => invoke('snapshot'), start: () => invoke('start'), stop: () => invoke('stop'),
   setInterval: (value) => invoke('interval', value), collect: () => invoke('collect'),
+  setUserAgent: (value) => invoke('userAgent', value),
   clearLogs: () => invoke('clearLogs'), openData: () => invoke('openData'),
   onSnapshot: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);

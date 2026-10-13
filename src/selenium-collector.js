@@ -4,6 +4,16 @@ import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { parseArticleList, SOURCE_URL } from './article-parser.js';
+import { normalizeUserAgent } from './browser-settings.js';
+
+export function createChromeOptions({ directory, chromeBinary, userAgent = '' }) {
+  const options = new chrome.Options();
+  options.addArguments('--headless=new', `--user-data-dir=${resolve(directory, 'profile')}`, '--window-size=1200,900');
+  const normalized = normalizeUserAgent(userAgent);
+  if (normalized) options.addArguments(`--user-agent=${normalized}`);
+  if (chromeBinary) options.setChromeBinaryPath(chromeBinary);
+  return options;
+}
 
 function inspectDocument() {
   const table = document.querySelector('.article-list .list-table');
@@ -21,18 +31,20 @@ export class SeleniumCollector {
   #directory;
   #waitSeconds;
   #binary;
+  #userAgent;
   #driver = null;
   #building = null;
   #closed = false;
-  #status = { stage: 'idle', running: false, version: null, title: null, httpStatus: null, attentionRequired: false };
+  #status = { headless: true, stage: 'idle', running: false, version: null, effectiveUserAgent: null, title: null, httpStatus: null, attentionRequired: false };
 
-  constructor({ directory, waitSeconds = 120, chromeBinary }) {
+  constructor({ directory, waitSeconds = 120, chromeBinary, userAgent = '' }) {
     this.#directory = directory;
     this.#waitSeconds = waitSeconds;
     this.#binary = chromeBinary;
+    this.#userAgent = normalizeUserAgent(userAgent);
   }
 
-  getStatus() { return { ...this.#status }; }
+  getStatus() { return { ...this.#status, userAgent: this.#userAgent }; }
 
   async #getDriver() {
     if (this.#closed) throw new Error('브라우저 수집기가 종료되었습니다.');
@@ -45,13 +57,12 @@ export class SeleniumCollector {
         process.env.SE_AVOID_STATS = 'true';
         process.env.SE_AVOID_BROWSER_DOWNLOAD = 'true';
         process.env.SE_TIMEOUT = '60';
-        const options = new chrome.Options();
-        options.addArguments(`--user-data-dir=${resolve(this.#directory, 'profile')}`, '--window-size=1200,900');
-        if (this.#binary) options.setChromeBinaryPath(this.#binary);
+        const options = createChromeOptions({ directory: this.#directory, chromeBinary: this.#binary, userAgent: this.#userAgent });
         this.#driver = await new Builder().forBrowser('chrome').setChromeOptions(options).build();
         this.#status.running = true;
         this.#status.version = (await this.#driver.getCapabilities()).get('browserVersion');
         await this.#driver.manage().setTimeouts({ pageLoad: 30_000, script: 10_000, implicit: 0 });
+        this.#status.effectiveUserAgent = await this.#driver.executeScript('return navigator.userAgent');
         return this.#driver;
       })().finally(() => { this.#building = null; });
     }
@@ -85,7 +96,10 @@ export class SeleniumCollector {
         }
         this.#status.stage = 'waiting-for-list';
         if (Date.now() >= deadline) {
-          throw new Error(`게시글 목록을 ${this.#waitSeconds}초 동안 확인하지 못했습니다. 열린 Chrome에서 접속·보안 확인 상태를 확인하세요. (페이지: ${state.title})`);
+          const detail = state.challengeDetected
+            ? '사이트 보안 확인이 감지되었습니다. 헤드리스 모드에서는 직접 확인할 수 없습니다.'
+            : '접속 상태나 사이트 HTML 구조를 확인하세요.';
+          throw new Error(`게시글 목록을 ${this.#waitSeconds}초 동안 확인하지 못했습니다. ${detail} (페이지: ${state.title}, HTTP: ${state.httpStatus ?? '알 수 없음'})`);
         }
         await delay(1000, undefined, { signal });
       }
@@ -110,5 +124,6 @@ export class SeleniumCollector {
     if (driver) await driver.quit().catch(() => {});
     this.#status.running = false;
     this.#status.stage = 'closed';
+    this.#status.attentionRequired = false;
   }
 }

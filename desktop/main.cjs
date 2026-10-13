@@ -19,7 +19,7 @@ else {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     const { readServerConfig } = await import('../src/server-config.js');
     const { ServerController } = await import('./server-controller.js');
-    const config = readServerConfig(process.env, root);
+    const config = readServerConfig({ ...process.env, SELENIUM_USER_AGENT: undefined }, root);
     controller = new ServerController({ config,
       spawnWorker: () => utilityProcess.fork(path.join(__dirname, 'server-worker.js'), [], {
         cwd: root, stdio: 'pipe', serviceName: 'Hotdeal Selenium Server',
@@ -38,6 +38,7 @@ else {
     const actions = {
       snapshot: () => controller.snapshot(), start: () => controller.start(), stop: () => controller.stop(),
       interval: (value) => controller.setIntervalSeconds(value), collect: () => controller.collectNow(),
+      userAgent: (value) => controller.setUserAgent(value),
       clearLogs: () => { controller.clearLogs(); return controller.snapshot(); },
       openData: async () => { await mkdir(config.directory, { recursive: true }); const error = await shell.openPath(config.directory); if (error) throw new Error(error); },
     };

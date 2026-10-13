@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { ServerController } from '../desktop/server-controller.js';
 import { createServerRuntime } from '../src/server-runtime.js';
 import { readServerConfig } from '../src/server-config.js';
+import { loadUserAgent } from '../src/browser-settings.js';
 
 const article = { id: '123', url: 'https://arca.live/b/hotdeal/123', title: '테스트 핫딜', author: '일반 사용자' };
 async function directory(t) {
@@ -118,6 +119,8 @@ test('external server attaches through HTTP; interval and manual requests work; 
   t.after(() => controller.stop());
   await controller.start();
   assert.equal(controller.snapshot().owned, false);
+  await assert.rejects(controller.setUserAgent('External/1.0'), /외부 서버/);
+  await assert.rejects(readFile(join(otherPath, 'browser-settings.json')), { code: 'ENOENT' });
   await controller.setIntervalSeconds(300);
   assert.equal(runtime.service.getStatus().intervalSeconds, 300);
   await controller.collectNow();
@@ -165,4 +168,58 @@ test('runtime shutdown during API startup closes the listener and never starts c
   assert.equal(calls, 0);
   assert.equal(runtime.service.getStatus().running, false);
   assert.throws(() => runtime.api.baseUrl, /실행 중이 아닙니다/);
+});
+
+test('UI User-Agent persists independently of interval, stays unchanged in a running server and applies on restart', async (t) => {
+  const { controller, path, workers } = await fixture(t);
+  await controller.setIntervalSeconds(240);
+  await controller.setUserAgent('  HotdealCollector/1.0  ');
+  assert.equal(controller.snapshot().userAgent, 'HotdealCollector/1.0');
+  await controller.start();
+  assert.equal(workers[0].runtime.config.userAgent, 'HotdealCollector/1.0');
+  await controller.setUserAgent('HotdealCollector/2.0');
+  await controller.setIntervalSeconds(75);
+  assert.equal(workers[0].runtime.config.userAgent, 'HotdealCollector/1.0');
+  assert.equal(await loadUserAgent(join(path, 'browser-settings.json')), 'HotdealCollector/2.0');
+  assert.equal(JSON.parse(await readFile(join(path, 'settings.json'), 'utf8')).intervalSeconds, 75);
+  await controller.stop();
+  await controller.start();
+  assert.equal(workers[1].runtime.config.userAgent, 'HotdealCollector/2.0');
+  await controller.stop();
+  const restored = new ServerController({ config: { ...config(path), userAgentOverride: 'Env/1.0' }, spawnWorker: () => { throw new Error('not needed'); } });
+  await restored.initialize();
+  assert.equal(restored.snapshot().userAgent, 'HotdealCollector/2.0');
+  await controller.setUserAgent('  ');
+  await controller.start();
+  assert.equal(workers[2].runtime.config.userAgent, '');
+  await controller.stop();
+});
+
+test('invalid User-Agent input never overwrites saved settings; CLI override is validated and optional', async (t) => {
+  const { controller, path } = await fixture(t);
+  await controller.setUserAgent('Valid/1.0');
+  const settings = join(path, 'browser-settings.json');
+  const before = await readFile(settings, 'utf8');
+  for (const value of [null, {}, 123, 'bad\r\nHeader: injected', 'bad\tvalue', '한글', 'a'.repeat(1025)]) {
+    await assert.rejects(controller.setUserAgent(value), /User-Agent/);
+    assert.equal(await readFile(settings, 'utf8'), before);
+  }
+  assert.equal(await loadUserAgent(settings, 'Env/1.0'), 'Env/1.0');
+  assert.equal(await loadUserAgent(settings, ''), '');
+  assert.equal(await loadUserAgent(join(path, 'missing.json')), '');
+  assert.equal(readServerConfig({ SELENIUM_USER_AGENT: '  Env/1.0  ' }, path).userAgentOverride, 'Env/1.0');
+  assert.throws(() => readServerConfig({ SELENIUM_USER_AGENT: 'bad\nvalue' }, path), /User-Agent/);
+});
+
+test('invalid saved browser settings block startup and preserve the file', async (t) => {
+  const path = await directory(t);
+  const file = join(path, 'browser-settings.json');
+  await writeFile(file, '{"userAgent":123}');
+  let spawned = false;
+  const controller = new ServerController({ config: config(path), spawnWorker: () => { spawned = true; } });
+  await controller.initialize();
+  assert.equal(controller.snapshot().phase, 'error');
+  await assert.rejects(controller.start(), /브라우저 설정/);
+  assert.equal(spawned, false);
+  assert.equal(await readFile(file, 'utf8'), '{"userAgent":123}');
 });

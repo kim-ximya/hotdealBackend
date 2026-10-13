@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { normalizeUserAgent } from './browser-settings.js';
 
 export function readServerConfig(env, rootDirectory) {
   const integer = (name, fallback, min, max) => {
@@ -16,6 +17,7 @@ export function readServerConfig(env, rootDirectory) {
     waitSeconds: integer('SELENIUM_WAIT_SECONDS', 120, 1, 600),
     intervalOverride: env.CRAWL_INTERVAL_SECONDS,
     chromeBinary: env.SELENIUM_CHROME_BINARY || undefined,
+    userAgentOverride: env.SELENIUM_USER_AGENT === undefined ? undefined : normalizeUserAgent(env.SELENIUM_USER_AGENT),
     allowedOrigins: (env.FRONTEND_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean),
   };
 }

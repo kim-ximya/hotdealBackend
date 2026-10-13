@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { resolve } from 'node:path';
 import { ArticleStore, atomicWriteJson } from '../src/article-store.js';
 import { loadInterval, validInterval } from '../src/crawl-service.js';
+import { loadUserAgent, normalizeUserAgent } from '../src/browser-settings.js';
 
 export class ServerController extends EventEmitter {
   #config;
@@ -18,16 +19,17 @@ export class ServerController extends EventEmitter {
 
   constructor({ config, spawnWorker, fetchImpl = fetch }) {
     super();
-    this.#config = { ...config, intervalOverride: undefined };
+    this.#config = { ...config, intervalOverride: undefined, userAgentOverride: undefined };
     this.#spawn = spawnWorker;
     this.#fetch = fetchImpl;
     this.#state = { phase: 'stopped', owned: false, baseUrl: null, error: null,
-      dataDirectory: config.directory, intervalSeconds: 180, status: null, logs: [] };
+      dataDirectory: config.directory, intervalSeconds: 180, userAgent: '', status: null, logs: [] };
   }
 
   async initialize() {
     try {
       this.#state.intervalSeconds = await loadInterval(resolve(this.#config.directory, 'settings.json'));
+      this.#state.userAgent = await loadUserAgent(resolve(this.#config.directory, 'browser-settings.json'));
       const store = new ArticleStore({ path: resolve(this.#config.directory, 'articles.json'), maxArticles: this.#config.maxArticles });
       await store.load();
       const saved = store.getSnapshot();
@@ -79,6 +81,7 @@ export class ServerController extends EventEmitter {
       const store = new ArticleStore({ path: resolve(this.#config.directory, 'articles.json'), maxArticles: this.#config.maxArticles });
       await store.load();
       await loadInterval(resolve(this.#config.directory, 'settings.json'));
+      this.#state.userAgent = await loadUserAgent(resolve(this.#config.directory, 'browser-settings.json'));
       if (this.#config.port) {
         this.#state.baseUrl = `http://127.0.0.1:${this.#config.port}`;
         let existing;
@@ -221,6 +224,16 @@ export class ServerController extends EventEmitter {
     this.#state.intervalSeconds = value;
     if (this.#state.status) this.#state.status.intervalSeconds = value;
     this.log('info', `수집 간격을 ${value}초로 저장했습니다.`);
+    return this.snapshot();
+  }); }
+
+  setUserAgent(value) { return this.#queue(async () => {
+    if (this.#state.phase === 'running' && !this.#state.owned) throw new Error('외부 서버에 연결된 상태에서는 User-Agent를 변경할 수 없습니다.');
+    if (['starting', 'stopping'].includes(this.#state.phase)) throw new Error('서버 시작·종료가 완료된 뒤 변경하세요.');
+    const userAgent = normalizeUserAgent(value);
+    await atomicWriteJson(resolve(this.#config.directory, 'browser-settings.json'), { userAgent });
+    this.#state.userAgent = userAgent;
+    this.log('info', `User-Agent 설정 저장: ${userAgent ? '사용자 지정' : 'Chrome 기본값'}. 다음 서버 시작부터 적용합니다.`);
     return this.snapshot();
   }); }
 

@@ -3,13 +3,15 @@ import { ArticleStore } from './article-store.js';
 import { SeleniumCollector } from './selenium-collector.js';
 import { CrawlService, loadInterval } from './crawl-service.js';
 import { CrawlerApi } from './crawler-api.js';
+import { loadUserAgent } from './browser-settings.js';
 
 export async function createServerRuntime(config, { log = () => {}, source: providedSource } = {}) {
   const store = new ArticleStore({ path: resolve(config.directory, 'articles.json'), maxArticles: config.maxArticles });
   await store.load();
   const settingsPath = resolve(config.directory, 'settings.json');
   const intervalSeconds = await loadInterval(settingsPath, config.intervalOverride);
-  const source = providedSource || new SeleniumCollector({ directory: config.directory, waitSeconds: config.waitSeconds, chromeBinary: config.chromeBinary });
+  const userAgent = await loadUserAgent(resolve(config.directory, 'browser-settings.json'), config.userAgentOverride);
+  const source = providedSource || new SeleniumCollector({ directory: config.directory, waitSeconds: config.waitSeconds, chromeBinary: config.chromeBinary, userAgent });
   const service = new CrawlService({ source, store, intervalSeconds, settingsPath });
   const api = new CrawlerApi({ service, store, port: config.port, allowedOrigins: config.allowedOrigins });
   let starting = null;
@@ -21,7 +23,7 @@ export async function createServerRuntime(config, { log = () => {}, source: prov
   service.on('collectionFailed', ({ message }) => log('error', `수집 실패: ${message} 마지막으로 저장한 데이터를 유지합니다.`));
   service.on('intervalChanged', ({ intervalSeconds: seconds }) => log('info', `수집 간격 변경: ${seconds}초`));
   return {
-    service, api, store, config,
+    service, api, store, config: { ...config, userAgent },
     start() {
       if (stopping) return Promise.resolve();
       if (!starting) starting = (async () => {
@@ -29,7 +31,8 @@ export async function createServerRuntime(config, { log = () => {}, source: prov
         if (stopping) return;
         log('info', `Selenium 핫딜 수집 서버: ${api.baseUrl}`);
         log('info', `수집 간격: ${intervalSeconds}초 / JSON 저장: ${store.path}`);
-        log('info', '전용 Chrome 창을 유지합니다. 보안 확인이 나타나면 해당 창에서 직접 완료하세요.');
+        log('info', `User-Agent: ${userAgent ? '사용자 지정' : 'Chrome 기본값'}`);
+        log('info', 'Chrome 헤드리스 모드로 백그라운드 수집합니다. 보안 확인으로 수집에 실패하면 마지막 저장 데이터를 유지합니다.');
         service.start();
       })();
       return starting;

@@ -2,13 +2,14 @@ const $ = (id) => document.getElementById(id);
 let current;
 let busy = false;
 let dirty = false;
+let userAgentDirty = false;
 let toastTimer;
 let logSignature;
 let actionError = null;
 const time = (value) => value ? new Date(value).toLocaleTimeString('en-GB', { hour12: false }) : '기록 없음';
 const date = (value) => value ? new Date(value).toLocaleDateString('ko-KR') : '첫 수집을 기다리고 있습니다.';
 const intervalText = (seconds) => seconds % 60 === 0 ? `${seconds / 60}분` : `${seconds}초`;
-const stages = { idle: '대기 중', 'starting-browser': 'Chrome 시작 중', navigating: '페이지 접속 중', 'waiting-for-list': '목록 대기 중', parsing: '목록 분석 중', error: '오류 확인 필요', closed: '중지됨' };
+const stages = { idle: '대기 중', 'starting-browser': '백그라운드 시작', navigating: '페이지 접속 중', 'waiting-for-list': '목록 대기 중', parsing: '목록 분석 중', error: '오류 확인 필요', closed: '중지됨' };
 
 function toast(message) {
   clearTimeout(toastTimer);
@@ -67,13 +68,25 @@ function render(snapshot) {
   const transitioning = phase === 'starting' || phase === 'stopping';
   $('phase-label').textContent = { stopped: '서버 중지', starting: '시작 중', stopping: '종료 중', running: owned ? '서버 실행 중' : '외부 서버 연결', error: '오류 확인 필요' }[phase];
   $('status-dot').className = `dot ${phase}`;
-  $('headline').textContent = { stopped: '수집을 시작할 준비가 되었습니다.', starting: '서버와 전용 Chrome을 시작합니다.', stopping: '수집 서버를 안전하게 종료합니다.', running: status?.isCollecting ? '핫딜 게시글을 수집하고 있습니다.' : '다음 핫딜 수집을 기다리고 있습니다.', error: '서버 상태를 확인해 주세요.' }[phase];
-  $('subline').textContent = running ? `${intervalText(snapshot.intervalSeconds)}마다 자동 수집 · ${owned ? '앱에서 시작한 서버' : '별도로 실행 중인 서버'}` : phase === 'stopping' ? '진행 중인 작업을 정리하고 전용 Chrome을 닫습니다.' : '수집한 게시글은 JSON으로 저장하고 로컬 API로 제공합니다.';
+  $('headline').textContent = { stopped: '수집을 시작할 준비가 되었습니다.', starting: '백그라운드 수집 서버를 시작합니다.', stopping: '수집 서버를 안전하게 종료합니다.', running: status?.isCollecting ? '핫딜 게시글을 수집하고 있습니다.' : '다음 핫딜 수집을 기다리고 있습니다.', error: '서버 상태를 확인해 주세요.' }[phase];
+  $('subline').textContent = running ? `${intervalText(snapshot.intervalSeconds)}마다 자동 수집 · ${owned ? 'Chrome 헤드리스' : '별도로 실행 중인 서버'}` : phase === 'stopping' ? '진행 중인 작업과 백그라운드 Chrome을 종료합니다.' : 'Chrome 창 없이 수집하고 저장된 JSON을 로컬 API로 제공합니다.';
   $('start').disabled = busy || running || transitioning || (phase === 'error' && owned);
   $('stop').disabled = busy || (phase === 'stopped') || transitioning;
   $('stop').textContent = !owned && running ? '연결 해제' : '서버 중지';
   $('collect').disabled = busy || !running || status?.isCollecting;
   $('apply').disabled = busy || transitioning;
+  const external = running && !owned;
+  $('browser-mode').textContent = external && status?.browser?.headless !== true
+    ? '외부 서버 연결 · 브라우저 모드 확인 필요' : 'Chrome 헤드리스 · 백그라운드 수집';
+  $('save-user-agent').disabled = busy || transitioning || external;
+  $('user-agent').disabled = transitioning || external;
+  if (!userAgentDirty) $('user-agent').value = snapshot.userAgent || '';
+  const activeUserAgent = status?.browser?.userAgent;
+  const needsRestart = running && owned && typeof activeUserAgent === 'string' && snapshot.userAgent !== activeUserAgent;
+  $('user-agent-status').textContent = external ? '외부 서버 연결 중에는 변경할 수 없습니다.'
+    : needsRestart ? '설정 저장됨 · 재시작 필요'
+    : snapshot.userAgent ? '사용자 지정 User-Agent 저장됨' : 'Chrome 기본값 사용';
+  $('user-agent-restart').hidden = !needsRestart;
   $('open-data').disabled = busy || (running && !owned);
   $('article-count').textContent = (status?.articleCount || 0).toLocaleString('ko-KR');
   $('last-success').textContent = time(status?.lastSuccessAt);
@@ -108,6 +121,31 @@ $('interval-form').addEventListener('submit', (event) => {
   const seconds = Number($('interval').value) * Number($('unit').value);
   void action(async () => { const snapshot = await window.hotdeal.setInterval(seconds); dirty = false; return snapshot; }, '수집 간격을 저장했습니다.');
 });
+$('user-agent').addEventListener('input', () => { userAgentDirty = true; });
+$('user-agent-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  void action(async () => {
+    const snapshot = await window.hotdeal.setUserAgent($('user-agent').value);
+    userAgentDirty = false;
+    return snapshot;
+  }, 'User-Agent를 저장했습니다. 다음 서버 시작부터 적용됩니다.');
+});
+for (const id of ['collection-tab', 'browser-tab']) {
+  $(id).addEventListener('click', () => {
+    for (const [tab, panel] of [['collection-tab', 'collection-settings'], ['browser-tab', 'browser-settings']]) {
+      const selected = tab === id;
+      $(tab).setAttribute('aria-selected', String(selected));
+      $(tab).tabIndex = selected ? 0 : -1;
+      $(panel).hidden = !selected;
+    }
+  });
+  $(id).addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 'collection-tab' : event.key === 'End' ? 'browser-tab' : id === 'collection-tab' ? 'browser-tab' : 'collection-tab';
+    $(next).click(); $(next).focus();
+  });
+}
 $('open-data').addEventListener('click', () => action(() => window.hotdeal.openData()));
 $('clear-logs').addEventListener('click', () => action(() => window.hotdeal.clearLogs()));
 $('log-filter').addEventListener('change', () => { if (current) renderLogs(current); });

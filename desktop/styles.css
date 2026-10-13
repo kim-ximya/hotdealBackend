@@ -42,6 +42,15 @@ h1{font-size:21px;margin:0 0 5px;font-weight:650;letter-spacing:-.5px}
 .workspace{display:grid;grid-template-columns:296px minmax(0,1fr);gap:19px}
 .panel{border:1px solid var(--border);border-radius:10px;background:var(--panel);overflow:hidden}
 .settings{padding:18px}
+.settings{max-height:475px;overflow:auto;scrollbar-color:#34465b transparent;scrollbar-width:thin}
+.settings-tabs{display:flex;gap:4px;padding:4px;background:#0e1724;border-radius:8px;margin-bottom:17px}
+.settings-tabs button{flex:1;border:0;background:transparent;min-height:30px;padding:6px 9px;font-size:12px;color:var(--muted)}
+.settings-tabs button[aria-selected=true]{background:#27384a;color:var(--text)}
+textarea{display:block;width:100%;resize:vertical;min-height:100px;max-height:170px;padding:10px;border:1px solid #35445b;border-radius:7px;background:#0e1724;color:var(--text);font:11px/1.6 Consolas,monospace}
+textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+textarea:disabled{opacity:.45}
+.restart-note{border:1px solid #665633;border-radius:7px;padding:10px;font-size:11px;line-height:1.7;color:#efcd91;background:#302b1b}
+.browser-mode{color:var(--accent);font-size:11px;padding:9px 10px;border:1px solid #2b645d;border-radius:7px;background:#15302f;margin:0 0 16px}
 .panel-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}
 .panel-heading h2{font-size:15px;margin:0;font-weight:600}
 .tag{font-size:10px;color:#90a3b7;border:1px solid #304054;background:#1b2737;border-radius:5px;padding:3px 6px}

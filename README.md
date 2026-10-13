@@ -1,9 +1,9 @@
 # Selenium 핫딜 수집 서버
 
-Selenium이 실행한 Chrome에서 아카라이브 핫딜 목록을 **기본 3분(180초)마다** 수집합니다. 게시글을 ID로 병합해 JSON 파일에 저장하고, 웹페이지·Windows 앱 등에서 사용할 수 있는 조회 API를 제공합니다.
+Selenium이 실행한 **헤드리스 Chrome**에서 아카라이브 핫딜 목록을 **기본 3분(180초)마다** 수집합니다. Chrome 창을 표시하지 않고 백그라운드에서 실행하며, 게시글을 ID로 병합해 JSON 파일에 저장하고 웹페이지·Windows 앱 등에서 사용할 수 있는 조회 API를 제공합니다.
 
 ```text
-전용 Chrome → 핫딜 목록 HTML → 게시글 파싱 → articles.json 저장 → 조회 API
+헤드리스 Chrome → 핫딜 목록 HTML → 게시글 파싱 → articles.json 저장 → 조회 API
                     ↑ 설정한 간격마다 실행
 ```
 
@@ -16,13 +16,14 @@ npm install
 npm run desktop
 ```
 
-Electron으로 만든 **핫딜 수집 관리자** 창이 열립니다. 앱을 열기만 하면 수집을 시작하지 않으며, **서버 시작**을 누르면 전용 Chrome을 열고 즉시 첫 수집을 실행합니다.
+Electron으로 만든 **핫딜 수집 관리자** 창이 열립니다. 앱을 열기만 하면 수집을 시작하지 않으며, **서버 시작**을 누르면 Chrome을 백그라운드에서 실행하고 즉시 첫 수집을 시작합니다. 수집용 Chrome 창은 표시되지 않습니다.
 설치 후에는 루트의 `start-desktop.cmd`를 더블클릭해 실행할 수도 있습니다.
 
 | UI 기능 | 동작 |
 | --- | --- |
 | 서버 시작·중지 | 수집 예약과 로컬 API를 시작·종료합니다. 중지 시 전용 Chrome도 종료합니다. |
 | 수집 간격 | 분·초 단위로 입력하고 **간격 적용**을 누릅니다. 중지 상태에서도 저장되며 재시작 후 유지됩니다. |
+| User-Agent | **브라우저** 탭에서 입력하고 **User-Agent 저장**을 누릅니다. 다음 서버 시작부터 적용되며, 빈 값은 Chrome 기본값을 사용합니다. |
 | 지금 수집 | 다음 예약을 기다리지 않고 수집합니다. 이미 수집 중이면 중복 실행하지 않습니다. |
 | 상태 | 보관 수, 마지막 성공 시각, 다음 수집까지의 시간, 브라우저 상태, 이번 실행의 성공·시도 횟수를 표시합니다. |
 | 로그 | 현재 앱 세션의 최근 500개 로그, 오류·브라우저 필터, 자동 스크롤을 제공합니다. 로그 비우기는 화면 로그만 지웁니다. |
@@ -33,6 +34,8 @@ Electron으로 만든 **핫딜 수집 관리자** 창이 열립니다. 앱을 �
 UI와 수집 서버는 별도 프로세스로 실행합니다. 수집은 기존 Selenium 코드와 JSON API를 공유합니다. 화면에는 Node.js 접근을 허용하지 않으며, [Electron의 context isolation·IPC 보안 지침](https://www.electronjs.org/docs/latest/tutorial/security)을 따라 제한된 제어 기능만 전달합니다.
 
 **UI로 실행한 서버는 저장된 `settings.json`의 간격을 우선 사용하며 `CRAWL_INTERVAL_SECONDS`는 사용하지 않습니다.** 나머지 `.env` 설정은 그대로 적용됩니다. 기존 `.local/selenium-server` 데이터도 이어서 사용합니다. 같은 데이터 폴더로 서버 두 개를 별도 포트에서 동시에 실행하지 마세요.
+
+User-Agent는 데이터 폴더의 `browser-settings.json`에 별도로 저장합니다. 실행 중 저장하면 **재시작 필요** 안내가 표시되며, 서버를 중지하고 다시 시작하면 적용됩니다. 입력은 개행 없는 영문·숫자·기호(ASCII) 1024자 이하이며, 앞뒤 공백은 제거합니다. 외부 서버에 연결된 상태에서는 이 설정을 편집할 수 없습니다. UI는 저장한 User-Agent를 사용하고 `.env`의 `SELENIUM_USER_AGENT`는 사용하지 않습니다.
 
 pnpm을 사용한다면 다음과 같이 실행합니다. Electron 설치 스크립트가 차단되는 환경에서는 `desktop:install`로 실행 파일을 준비합니다.
 
@@ -50,7 +53,7 @@ pnpm desktop
 npm start
 ```
 
-pnpm을 사용하면 `pnpm install` 후 `pnpm start`로 실행할 수 있습니다. 시작 시 즉시 한 번 수집하며, 이후 설정한 간격으로 수집합니다. 서버 실행 중 전용 Chrome 창을 계속 유지합니다. 보안 확인이 나타나면 해당 창에서 직접 완료하세요. 종료는 `Ctrl+C`이며, 수집 예약과 전용 브라우저를 함께 종료합니다.
+pnpm을 사용하면 `pnpm install` 후 `pnpm start`로 실행할 수 있습니다. 시작 시 즉시 한 번 수집하며, 이후 설정한 간격으로 수집합니다. 서버 실행 중 헤드리스 Chrome 프로세스를 유지합니다. 종료는 `Ctrl+C`이며, 수집 예약과 백그라운드 브라우저를 함께 종료합니다.
 
 터미널에서 시작할 때 같은 포트의 서버가 이미 실행 중이면 먼저 종료하세요.
 
@@ -88,9 +91,12 @@ Invoke-RestMethod -Method Put `
 | `MAX_ARTICLES` | 10000 | 최신 ID부터 보관할 최대 게시글 수(1~100000) |
 | `SELENIUM_WAIT_SECONDS` | 120 | 접속·보안 확인 후 목록을 기다리는 시간(초) |
 | `SELENIUM_CHROME_BINARY` | 자동 탐색 | Chrome 실행 파일 경로 |
+| `SELENIUM_USER_AGENT` | 저장값 또는 Chrome 기본값 | 터미널 실행 시 User-Agent 재정의. 빈 값은 Chrome 기본값. UI는 저장값 사용 |
 | `FRONTEND_ORIGINS` | 없음 | CORS를 허용할 정확한 HTTP(S) 출처 목록(쉼표 구분) |
 
 한 번의 수집이 오래 걸리면 중간에 예정된 실행은 건너뜁니다. 작업을 겹쳐 실행하거나 놓친 횟수만큼 연속 요청하지 않습니다. 간격 변경은 예약을 다시 계산하며, 진행 중인 수집은 그대로 완료합니다.
+
+터미널 서버의 User-Agent 우선순위는 **명시적 `SELENIUM_USER_AGENT` → `browser-settings.json` → Chrome 기본값**입니다. UA 변경은 Chrome의 `--user-agent` 옵션에 적용하며, `/api/status`의 `browser.userAgent`는 해당 서버 실행에서 지정한 값(빈 문자열이면 Chrome 기본값)을 표시합니다. User-Agent 변경이 사이트의 보안 확인을 해결한다는 보장은 없습니다.
 
 ## 저장 방식
 
@@ -155,7 +161,9 @@ Invoke-RestMethod -Method Post `
   -Body '{}'
 ```
 
-상태의 주요 항목은 `isCollecting`, `nextRunAt`, `lastSuccessAt`, `lastError`, `attempts`, `successes`, `consecutiveFailures`, `articleCount`입니다. `lastSuccessAt`은 재시작 시 저장 파일의 갱신 시각으로 복구하고, 실행 횟수는 이번 서버 실행 기준입니다. `browser.attentionRequired`가 `true`이면 전용 Chrome의 보안 확인 화면을 확인하세요. 재접속이나 파싱 실패는 `lastError`로 보고하고 다음 예약 시 다시 시도합니다.
+상태의 주요 항목은 `isCollecting`, `nextRunAt`, `lastSuccessAt`, `lastError`, `attempts`, `successes`, `consecutiveFailures`, `articleCount`입니다. `lastSuccessAt`은 재시작 시 저장 파일의 갱신 시각으로 복구하고, 실행 횟수는 이번 서버 실행 기준입니다. `browser.headless`는 `true`이며, `browser.effectiveUserAgent`는 Chrome에서 확인한 실제 User-Agent입니다. `browser.userAgent`는 설정한 재정의 값입니다.
+
+`browser.attentionRequired`가 `true`이면 사이트 보안 확인이 감지된 상태입니다. 헤드리스 모드에서는 사용자가 화면에서 직접 확인할 수 없습니다. 지정한 대기 시간 내 목록을 얻지 못하면 `lastError`와 UI 로그에 실패를 표시하고 마지막 정상 JSON을 유지하며 다음 예약 시 다시 시도합니다. 보안 확인 화면은 게시글 목록으로 저장하지 않습니다. 저장된 User-Agent, 네트워크와 사이트 접속 상태를 확인하세요. 창 표시 모드로 자동 전환하거나 보안 확인을 자동으로 해결하지 않습니다.
 
 서버는 `127.0.0.1`에 바인딩합니다. Windows 앱의 일반 HTTP 클라이언트에서는 바로 사용할 수 있습니다. 다른 포트에서 실행하는 웹 프론트엔드는 `.env`에 출처를 등록합니다.
 

@@ -21,7 +21,7 @@
         <div class="actions"><button id="start" class="primary" disabled><span aria-hidden="true">▶</span> 서버 시작</button><button id="stop" disabled>서버 중지</button><button id="collect" disabled><span aria-hidden="true">↻</span> 지금 수집</button></div>
       </section>
       <div id="error" class="banner error" role="alert" hidden></div>
-      <div id="attention" class="banner attention" hidden>열린 전용 Chrome에서 보안 확인을 직접 완료해 주세요. 목록이 표시되면 수집을 계속합니다.</div>
+      <div id="attention" class="banner attention" hidden>사이트 보안 확인이 감지되었습니다. 헤드리스 모드에서는 직접 확인할 수 없습니다. 수집 실패 시 마지막 정상 JSON을 유지합니다. 자세한 내용은 로그를 확인하세요.</div>
 
       <section class="metrics" aria-label="수집 현황">
         <article class="metric"><div class="metric-label">보관 중인 게시글 <span aria-hidden="true">▤</span></div><div class="metric-value"><strong id="article-count">0</strong><span>개</span></div><p>JSON에 저장된 누적 게시글</p></article>
@@ -33,6 +33,11 @@
       <div class="workspace">
         <aside class="settings panel">
           <div class="panel-heading"><h2>수집 설정</h2><span class="tag">재시작 유지</span></div>
+          <div class="settings-tabs" role="tablist" aria-label="설정 종류">
+            <button id="collection-tab" type="button" role="tab" aria-selected="true" aria-controls="collection-settings">수집</button>
+            <button id="browser-tab" type="button" role="tab" aria-selected="false" aria-controls="browser-settings" tabindex="-1">브라우저</button>
+          </div>
+          <div id="collection-settings" role="tabpanel" aria-labelledby="collection-tab">
           <form id="interval-form">
             <label for="interval">수집 간격</label>
             <div class="input-row"><input id="interval" type="number" min="1" max="1440" step="1" value="3" required><select id="unit" aria-label="수집 간격 단위"><option value="60">분</option><option value="1">초</option></select></div>
@@ -46,6 +51,20 @@
           <div class="divider"></div>
           <div class="section-label">로컬 API</div><code id="api-url">서버 시작 후 표시됩니다.</code>
           <p class="help" id="api-detail">저장된 목록: /api/articles</p>
+          </div>
+          <div id="browser-settings" role="tabpanel" aria-labelledby="browser-tab" hidden>
+            <p id="browser-mode" class="browser-mode">Chrome 헤드리스 · 백그라운드 수집</p>
+            <form id="user-agent-form">
+              <label for="user-agent">User-Agent</label>
+              <textarea id="user-agent" rows="5" maxlength="1024" spellcheck="false" placeholder="비워두면 Chrome 기본값 사용" aria-describedby="user-agent-help user-agent-status"></textarea>
+              <p id="user-agent-help" class="help">한 줄로 입력하세요. 비워서 저장하면 Chrome 기본값으로 돌아갑니다.</p>
+              <button id="save-user-agent" type="submit" class="wide">User-Agent 저장</button>
+              <p id="user-agent-status" class="saved" role="status">Chrome 기본값 사용</p>
+              <p id="user-agent-restart" class="restart-note" hidden>저장된 설정을 적용하려면 서버를 중지한 뒤 다시 시작하세요.</p>
+            </form>
+            <div class="divider"></div>
+            <p class="help">변경한 값은 다음 서버 시작부터 적용됩니다.</p>
+          </div>
         </aside>
 
         <section class="logs panel" aria-label="실행 로그">
