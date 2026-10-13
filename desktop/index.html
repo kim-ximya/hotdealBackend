@@ -12,7 +12,7 @@
   <div class="app">
     <header class="header">
       <div class="brand"><div class="brand-mark" aria-hidden="true">H<span>:</span>D</div><div><h1>핫딜 수집 관리자</h1><p>아카라이브 핫딜 채널 · Selenium</p></div></div>
-      <div class="header-status"><span class="dot" id="status-dot"></span><span id="phase-label">준비 중</span></div>
+      <div class="header-actions"><div class="header-status"><span class="dot" id="status-dot"></span><span id="phase-label">준비 중</span></div><button id="hide-to-tray" type="button" title="서버는 계속 실행됩니다. 트레이 아이콘을 누르면 창을 다시 엽니다.">트레이로 숨기기</button></div>
     </header>
 
     <main>
@@ -95,7 +95,7 @@
       </div>
       </section>
     </main>
-    <footer class="footer"><span><span class="tiny-dot"></span> <span id="footer-state">로컬에서 안전하게 보관</span></span><span>목록 첫 페이지 수집 · 작성자 * 제외</span></footer>
+    <footer class="footer"><span><span class="tiny-dot"></span> <span id="footer-state">로컬에서 안전하게 보관</span></span><span>닫기·최소화 → 트레이 숨기기 · 완전 종료 → 트레이 메뉴</span></footer>
   </div>
   <div id="toast" role="status" hidden></div>
 </body>

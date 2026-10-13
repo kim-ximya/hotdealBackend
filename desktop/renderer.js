@@ -118,6 +118,14 @@ function render(snapshot) {
 $('start').addEventListener('click', () => action(() => window.hotdeal.start(), '서버를 시작했습니다.'));
 $('stop').addEventListener('click', () => action(() => window.hotdeal.stop(), current?.owned ? '서버를 중지했습니다.' : '연결을 해제했습니다.'));
 $('collect').addEventListener('click', () => action(() => window.hotdeal.collect(), '즉시 수집을 요청했습니다.'));
+// Hiding the window remains available while a server action is in progress.
+$('hide-to-tray').addEventListener('click', () => {
+  window.hotdeal.hideToTray().catch((error) => {
+    actionError = error.message;
+    if (current) render(current);
+    else { $('error').textContent = actionError; $('error').hidden = false; }
+  });
+});
 $('interval').addEventListener('input', () => { dirty = true; });
 $('unit').addEventListener('change', () => { dirty = true; $('interval').max = Number($('unit').value) === 60 ? '1440' : '86400'; });
 $('interval-form').addEventListener('submit', (event) => {

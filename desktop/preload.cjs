@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('hotdeal', {
   setUserAgent: (value) => invoke('userAgent', value),
   articles: (query) => invoke('articles', query), openArticle: (id) => invoke('openArticle', id),
   clearLogs: () => invoke('clearLogs'), openData: () => invoke('openData'),
+  hideToTray: () => invoke('hideToTray'),
   onSnapshot: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
     ipcRenderer.on('hotdeal:snapshot', listener);

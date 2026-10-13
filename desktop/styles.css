@@ -13,6 +13,8 @@ button span{margin-right:5px}
 .app{max-width:1440px;margin:0 auto;padding:24px 32px 16px;height:100vh;min-height:860px;display:flex;flex-direction:column}
 main{display:flex;flex-direction:column;flex:1;min-height:0}
 .header,.control-panel,.metrics,.view-tabs,.footer{flex-shrink:0}
+.header-actions{display:flex;align-items:center;gap:12px}
+.header-actions>button{font-size:12px}
 .view-tabs{display:flex;align-items:center;gap:25px;margin:0 0 16px;border-bottom:1px solid var(--border)}
 .view-tabs>button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--muted);min-height:42px;padding:6px 2px 12px;font-size:14px}
 .view-tabs>button[aria-selected=true]{border-bottom-color:var(--accent);color:var(--accent)}
