@@ -3,6 +3,7 @@
 body{margin:0;padding:10px;background:transparent;overflow:hidden}
 .card{border:1px solid #36594f;border-top:3px solid #68e1c0;border-radius:13px;background:#131e29;box-shadow:0 4px 10px #0006;overflow:hidden;user-select:none;touch-action:none;cursor:grab}
 .card.is-dragging,.card.is-dragging *{cursor:grabbing!important}
+.card.is-settling,.card.is-settling *{cursor:default!important}
 header{display:flex;align-items:center;gap:10px;padding:15px 16px 12px}
 .brand{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:#68e1c0;color:#073c32;font-size:21px;font-weight:800;flex-shrink:0}
 header strong{font-size:14px}header p{margin:4px 0 0;font-size:10px;color:#8b9bb0}

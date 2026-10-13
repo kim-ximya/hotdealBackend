@@ -46,6 +46,8 @@ function fixture(t) {
   class Window extends EventEmitter {
     destroyed = false;
     sent = [];
+    opacity = 1;
+    boundsHistory = [];
     webContents = Object.assign(new EventEmitter(), {
       mainFrame: { url: pathToFileURL(join(import.meta.dirname, '../desktop/notification.html')).href },
       setWindowOpenHandler: () => {}, send: (...args) => this.sent.push(args),
@@ -53,8 +55,9 @@ function fixture(t) {
     constructor(options) { super(); this.options = options; windows.push(this); }
     isDestroyed() { return this.destroyed; }
     setMenu() {}
-    setBounds(bounds) { this.bounds = bounds; }
+    setBounds(bounds) { this.bounds = bounds; this.boundsHistory.push({ ...bounds }); }
     getBounds() { return { ...this.bounds }; }
+    setOpacity(value) { this.opacity = value; }
     showInactive() { this.shownInactive = true; }
     isVisible() { return this.shownInactive && !this.destroyed; }
     moveTop() { this.movedTop = true; }
@@ -69,18 +72,33 @@ function fixture(t) {
   let settings = { enabled: true, soundEnabled: true };
   const timers = new Map();
   let timerId = 0;
+  const animations = new Map();
+  let animationTime = 0;
+  let animationId = 0;
+  const advance = (milliseconds) => {
+    const until = animationTime + milliseconds;
+    while (animations.size) {
+      const [id, timer] = [...animations.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+      if (timer.at > until) break;
+      animations.delete(id); animationTime = timer.at; timer.callback();
+    }
+    animationTime = until;
+  };
   const opened = [];
   const manager = new notifications.FloatingNotifications({ BrowserWindow: Window, ipcMain, screen,
     getMainWindow: () => null, showMainWindow: () => opened.push('list'), openArticle: async (id) => opened.push(id),
     getSettings: () => settings, log: () => {},
     setTimer: (callback, ms) => { timers.set(++timerId, { callback, ms }); return timerId; }, clearTimer: (id) => timers.delete(id),
+    animationNow: () => animationTime,
+    setAnimationTimer: (callback, ms) => { animations.set(++animationId, { callback, at: animationTime + ms }); return animationId; },
+    clearAnimationTimer: (id) => animations.delete(id),
   });
   t.after(() => manager.dispose());
   const invoke = (action, value, event) => {
     const win = windows.at(-1);
     return handlers.get('hotdeal-notification:action')(event || { sender: win.webContents, senderFrame: win.webContents.mainFrame }, action, value);
   };
-  return { manager, windows, timers, opened, invoke, screen, handlers, settings: (value) => { settings = value; } };
+  return { manager, windows, timers, animations, advance, opened, invoke, screen, handlers, settings: (value) => { settings = value; } };
 }
 
 test('floating window groups arrivals, never focuses, fits the work area and pauses expiry while hovered', async (t) => {
@@ -134,8 +152,8 @@ test('mute disables automatic windows, preview respects sound, and IPC rejects u
   assert.equal(screen.listenerCount('display-removed'), 0);
 });
 
-test('a short swipe returns to its anchor, updates do not interrupt dragging, and expiry stays paused', async (t) => {
-  const { manager, windows, invoke, timers } = fixture(t);
+test('a short swipe eases back from its release position, and expiry stays paused until the transition ends', async (t) => {
+  const { manager, windows, invoke, timers, advance } = fixture(t);
   manager.show([article('1')]);
   const win = windows[0]; win.emit('ready-to-show');
   const origin = { ...win.bounds };
@@ -149,31 +167,53 @@ test('a short swipe returns to its anchor, updates do not interrupt dragging, an
   manager.show([article('2')]);
   assert.equal(win.bounds.x, origin.x + 40);
   assert.equal(timers.size, 0);
-  assert.equal((await invoke('drag-end', start + 40)).value, false);
+  const completion = invoke('drag-end', start + 40);
+  assert.equal(win.bounds.x, origin.x + 40);
+  assert.equal(timers.size, 0);
+  advance(96);
+  assert.ok(win.bounds.x > origin.x && win.bounds.x < origin.x + 40);
+  const midway = win.bounds.x;
+  manager.show([article('3')]);
+  assert.equal(win.bounds.x, midway);
+  assert.equal(timers.size, 0);
+  advance(224);
+  assert.equal((await completion).value, false);
   assert.equal(win.bounds.x, origin.x);
   assert.equal(win.destroyed, false);
   assert.equal(timers.size, 1);
 });
 
-test('a right swipe dismisses on release, including a short swipe that reaches a monitor edge', async (t) => {
-  const { manager, windows, invoke, timers } = fixture(t);
+test('a right swipe slides and fades from release before closing, including at a monitor edge', async (t) => {
+  const { manager, windows, invoke, timers, advance } = fixture(t);
   manager.showDemo(); windows[0].emit('ready-to-show');
   const start = windows[0].bounds.x + 100;
   await invoke('drag-start', start);
   await invoke('drag-move', start + 100);
   assert.equal(windows[0].destroyed, false);
-  assert.equal((await invoke('drag-end', start + 100)).value, true);
+  const releaseX = windows[0].bounds.x;
+  const completion = invoke('drag-end', start + 100);
+  assert.equal(windows[0].bounds.x, releaseX);
+  assert.equal(windows[0].destroyed, false);
+  assert.equal(windows[0].opacity, 1);
+  advance(96);
+  assert.ok(windows[0].bounds.x > releaseX);
+  assert.ok(windows[0].opacity > 0 && windows[0].opacity < 1);
+  assert.equal(windows[0].destroyed, false);
+  advance(224);
+  assert.equal((await completion).value, true);
   assert.equal(windows[0].destroyed, true);
   assert.equal(timers.size, 0);
   manager.showDemo(); windows[1].emit('ready-to-show');
   // This display ends at x=0, exercising negative screen coordinates.
   await invoke('drag-start', -25);
-  assert.equal((await invoke('drag-end', -1)).value, true);
+  const edgeCompletion = invoke('drag-end', -1);
+  advance(320);
+  assert.equal((await edgeCompletion).value, true);
   assert.equal(windows[1].destroyed, true);
 });
 
 test('left swipes and cancelled gestures preserve the window; malformed coordinates cannot move it', async (t) => {
-  const { manager, windows, invoke } = fixture(t);
+  const { manager, windows, invoke, advance } = fixture(t);
   manager.showDemo(); const win = windows[0]; win.emit('ready-to-show');
   const origin = { ...win.bounds };
   for (const value of [NaN, Infinity, '123', {}, 1000001]) assert.equal((await invoke('drag-start', value)).ok, false);
@@ -184,11 +224,53 @@ test('left swipes and cancelled gestures preserve the window; malformed coordina
   assert.equal((await invoke('drag-end', -250)).value, false);
   await invoke('drag-start', -200);
   await invoke('drag-move', -80);
-  await invoke('drag-cancel');
+  const cancellation = invoke('drag-cancel');
+  advance(320);
+  await cancellation;
   assert.deepEqual(win.bounds, origin);
   assert.equal(win.destroyed, false);
   await invoke('drag-start', -200);
   await invoke('drag-move', -160);
   manager.dispose();
   assert.equal(win.destroyed, true);
+});
+
+test('arrivals during dismissal appear after the outgoing window finishes without reviving the dismissed batch', async (t) => {
+  const { manager, windows, invoke, advance } = fixture(t);
+  manager.show([article('1')]); windows[0].emit('ready-to-show');
+  await invoke('drag-start', -200);
+  const completion = invoke('drag-end', -80);
+  advance(64);
+  manager.show([article('2')]); manager.show([article('3')]);
+  assert.equal(windows.length, 1);
+  advance(256);
+  assert.equal((await completion).value, true);
+  assert.equal(windows.length, 2);
+  windows[1].emit('ready-to-show');
+  assert.equal(windows[1].opacity, 1);
+  const payload = (await invoke('ready')).value;
+  assert.deepEqual(payload.articles.map(({ id }) => id), ['3', '2']);
+});
+
+test('shutdown cancels an animation and queued arrivals; display changes restore the anchor without stale frames', async (t) => {
+  const { manager, windows, invoke, advance, animations, screen } = fixture(t);
+  manager.showDemo(); const win = windows[0]; win.emit('ready-to-show');
+  const origin = { ...win.bounds };
+  await invoke('drag-start', -200);
+  const returning = invoke('drag-end', -160);
+  advance(64);
+  screen.emit('display-metrics-changed');
+  assert.equal((await returning).value, false);
+  assert.deepEqual(win.bounds, origin);
+  assert.equal(animations.size, 0);
+  await invoke('drag-start', -200);
+  const closing = invoke('drag-end', -80);
+  advance(64);
+  manager.show([article('2')]);
+  manager.dispose();
+  assert.equal((await closing).value, false);
+  assert.equal(win.destroyed, true);
+  assert.equal(animations.size, 0);
+  advance(500);
+  assert.equal(windows.length, 1);
 });

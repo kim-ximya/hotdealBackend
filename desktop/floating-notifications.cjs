@@ -1,5 +1,6 @@
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { performance } = require('node:perf_hooks');
 
 class FloatingNotifications {
   #deps;
@@ -11,11 +12,15 @@ class FloatingNotifications {
   #disposed = false;
   #hovered = false;
   #drag = null;
+  #animation = null;
+  #queued = null;
   #page = pathToFileURL(path.join(__dirname, 'notification.html')).href;
 
   constructor({ BrowserWindow, ipcMain, screen, getMainWindow, showMainWindow, openArticle,
-    getSettings, log, setTimer = setTimeout, clearTimer = clearTimeout }) {
-    this.#deps = { BrowserWindow, ipcMain, screen, getMainWindow, showMainWindow, openArticle, getSettings, log, setTimer, clearTimer };
+    getSettings, log, setTimer = setTimeout, clearTimer = clearTimeout,
+    setAnimationTimer = setTimeout, clearAnimationTimer = clearTimeout, animationNow = () => performance.now() }) {
+    this.#deps = { BrowserWindow, ipcMain, screen, getMainWindow, showMainWindow, openArticle, getSettings, log,
+      setTimer, clearTimer, setAnimationTimer, clearAnimationTimer, animationNow };
     ipcMain.handle('hotdeal-notification:action', async (event, action, value) => {
       if (!this.#window || event.sender !== this.#window.webContents ||
           event.senderFrame !== this.#window.webContents.mainFrame || event.senderFrame.url !== this.#page) throw new Error('허용되지 않은 요청입니다.');
@@ -26,8 +31,8 @@ class FloatingNotifications {
           if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 1000000) throw new Error('드래그 좌표가 올바르지 않습니다.');
           if (action === 'drag-start') this.#startDrag(value);
           else if (action === 'drag-move') this.#moveDrag(value);
-          else return { ok: true, value: this.#finishDrag(value) };
-        } else if (action === 'drag-cancel') this.#finishDrag(0, true);
+          else return { ok: true, value: await this.#finishDrag(value) };
+        } else if (action === 'drag-cancel') await this.#finishDrag(0, true);
         else if (action === 'hover' && typeof value === 'boolean') {
           this.#hovered = value;
           if (value) this.#cancelTimer(); else this.#armTimer();
@@ -39,7 +44,15 @@ class FloatingNotifications {
         return { ok: true };
       } catch (error) { return { ok: false, error: error.message }; }
     });
-    this.#deps.displayChanged = () => { this.#finishDrag(0, true); this.#position(); };
+    this.#deps.displayChanged = () => {
+      this.#drag = null;
+      this.#cancelAnimation();
+      this.#position();
+      const queued = this.#queued;
+      this.#queued = null;
+      if (queued) this.show(queued.articles, { test: queued.test });
+      this.#armTimer();
+    };
     for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, this.#deps.displayChanged);
   }
 
@@ -50,6 +63,14 @@ class FloatingNotifications {
   show(articles, { test = false } = {}) {
     const settings = this.#deps.getSettings();
     if (this.#disposed || (!test && !settings.enabled) || !articles.length) return;
+    // Let the dismissed batch finish leaving. New arrivals get a fresh window
+    // instead of being lost when the outgoing window is destroyed.
+    if (this.#animation?.closing) {
+      if (test && this.#queued?.test === false) return;
+      const previous = this.#queued?.test === test ? this.#queued.articles : [];
+      this.#queued = { test, articles: [...new Map([...previous, ...articles].map((article) => [article.id, article])).values()].slice(0, 1000) };
+      return;
+    }
     if (!this.#window || this.#payload?.test !== test) this.#articles = [];
     this.#articles = [...new Map([...this.#articles, ...articles].map((article) => [article.id, article])).values()]
       .sort((a, b) => a.id === null || b.id === null ? 0 : BigInt(a.id) > BigInt(b.id) ? -1 : BigInt(a.id) < BigInt(b.id) ? 1 : 0).slice(0, 1000);
@@ -78,6 +99,7 @@ class FloatingNotifications {
     win.webContents.on('render-process-gone', () => this.dismiss());
     win.on('closed', () => {
       if (this.#window !== win) return;
+      this.#cancelAnimation();
       this.#window = null;
       this.#articles = [];
       this.#payload = null;
@@ -100,7 +122,7 @@ class FloatingNotifications {
   }
 
   #position() {
-    if (!this.#window || this.#window.isDestroyed() || this.#drag) return;
+    if (!this.#window || this.#window.isDestroyed() || this.#drag || this.#animation) return;
     const main = this.#deps.getMainWindow();
     const display = main && !main.isDestroyed()
       ? this.#deps.screen.getDisplayMatching(main.getBounds()) : this.#deps.screen.getPrimaryDisplay();
@@ -118,11 +140,11 @@ class FloatingNotifications {
 
   #armTimer() {
     this.#cancelTimer();
-    if (this.#window && !this.#hovered && !this.#drag) this.#timer = this.#deps.setTimer(() => this.dismiss(), 8000);
+    if (this.#window && !this.#hovered && !this.#drag && !this.#animation) this.#timer = this.#deps.setTimer(() => this.dismiss(), 8000);
   }
 
   #startDrag(screenX) {
-    if (this.#drag) throw new Error('이미 알림을 드래그하고 있습니다.');
+    if (this.#drag || this.#animation) throw new Error('알림 이동이 끝난 뒤 다시 드래그하세요.');
     const origin = this.#window.getBounds();
     const { workArea } = this.#deps.screen.getDisplayMatching(origin);
     this.#drag = { origin, startX: screenX, edge: workArea.x + workArea.width, distance: 0 };
@@ -145,16 +167,67 @@ class FloatingNotifications {
     // monitor edge; such a swipe cannot travel 1/4 of the card's width.
     if (!cancelled && (drag.distance >= Math.min(96, drag.origin.width / 4) ||
         (drag.distance >= 12 && screenX >= drag.edge - 2))) {
-      this.dismiss();
-      return true;
+      return this.#animateTo(drag.edge + 16, true);
     }
-    this.#window.setBounds(drag.origin);
-    this.#position();
-    this.#armTimer();
-    return false;
+    return this.#animateTo(drag.origin.x, false);
+  }
+
+  #animateTo(targetX, closing) {
+    const win = this.#window;
+    const from = win.getBounds();
+    this.#cancelTimer();
+    if (!closing && from.x === targetX) {
+      this.#position();
+      this.#armTimer();
+      return false;
+    }
+    let resolve;
+    const promise = new Promise((done) => { resolve = done; });
+    const animation = { closing, promise, resolve, timer: null, startedAt: this.#deps.animationNow() };
+    this.#animation = animation;
+    const duration = closing ? 260 : 300;
+    const tick = () => {
+      if (this.#animation !== animation) return;
+      animation.timer = null;
+      if (win !== this.#window || win.isDestroyed()) { this.#cancelAnimation(); return; }
+      const progress = Math.min(1, Math.max(0, (this.#deps.animationNow() - animation.startedAt) / duration));
+      const eased = 1 - (1 - progress) ** 3;
+      win.setBounds({ ...from, x: Math.round(from.x + (targetX - from.x) * eased) });
+      if (closing) win.setOpacity(1 - eased);
+      if (progress < 1) {
+        animation.timer = this.#deps.setAnimationTimer(tick, 16);
+        return;
+      }
+      this.#animation = null;
+      if (closing) {
+        const queued = this.#queued;
+        this.#queued = null;
+        this.dismiss();
+        resolve(true);
+        if (queued) this.show(queued.articles, { test: queued.test });
+      } else {
+        this.#position();
+        this.#armTimer();
+        resolve(false);
+      }
+    };
+    // Begin at the release position; the first frame never jumps to the anchor.
+    tick();
+    return promise;
+  }
+
+  #cancelAnimation() {
+    const animation = this.#animation;
+    if (!animation) return;
+    this.#animation = null;
+    if (animation.timer !== null) this.#deps.clearAnimationTimer(animation.timer);
+    if (this.#window && !this.#window.isDestroyed()) this.#window.setOpacity(1);
+    animation.resolve(false);
   }
 
   dismiss() {
+    this.#queued = null;
+    this.#cancelAnimation();
     this.#cancelTimer();
     if (this.#window && !this.#window.isDestroyed()) this.#window.destroy();
   }

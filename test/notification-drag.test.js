@@ -23,7 +23,7 @@ class Surface {
   releasePointerCapture(id) { this.capture.delete(id); }
 }
 
-function fixture(t) {
+function fixture(t, overrides = {}) {
   const globals = ['window', 'document', 'requestAnimationFrame', 'cancelAnimationFrame'];
   const previous = globals.map((key) => Object.getOwnPropertyDescriptor(globalThis, key));
   const card = new Surface(); const surface = new Surface(); const button = new Surface();
@@ -38,7 +38,7 @@ function fixture(t) {
   }));
   const calls = []; const errors = [];
   const api = Object.fromEntries(['beginDrag', 'moveDrag', 'endDrag', 'cancelDrag', 'hover'].map((name) => [name, async (value) => {
-    calls.push([name, value]); return false;
+    calls.push([name, value]); return overrides[name] ? overrides[name](value) : false;
   }]));
   bindNotificationDrag(card, api, (error) => errors.push(error));
   return { card, surface, button, calls, errors, frames, flush: () => {
@@ -99,4 +99,21 @@ test('close and list buttons stay clickable, while left or vertical drags do not
   assert.equal(card.fire('click', { target: button }).prevented, true);
   await settle();
   assert.deepEqual(calls, []);
+});
+
+test('clicks and new drags remain blocked until the return animation has completed', async (t) => {
+  let complete;
+  const pending = new Promise((resolve) => { complete = resolve; });
+  const { card, surface, button, calls } = fixture(t, { endDrag: () => pending });
+  card.fire('pointerdown', { target: button });
+  card.fire('pointermove', { target: button, screenX: 120 });
+  surface.fire('pointerup', { target: button, screenX: 120 });
+  // Let the synthetic-click suppression expire while the animation is pending.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(card.fire('click', { target: button }).prevented, true);
+  card.fire('pointerdown', { target: button });
+  card.fire('pointermove', { target: button, screenX: 180 });
+  assert.equal(calls.filter(([name]) => name === 'beginDrag').length, 1);
+  complete(false); await settle();
+  assert.equal(card.fire('click', { target: button }).prevented, false);
 });

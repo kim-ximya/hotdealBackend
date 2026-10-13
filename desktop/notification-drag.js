@@ -20,9 +20,10 @@ export function bindNotificationDrag(card, api, onError) {
     }
     if (!current.started) return;
     finishing = true;
+    card.classList.add('is-settling');
     current.ready.then(() => cancelled ? api.cancelDrag() : api.endDrag(event.screenX))
       .then((dismissed) => { if (!dismissed) return api.hover(document.body.matches(':hover')); })
-      .catch(report).finally(() => { finishing = false; });
+      .catch(report).finally(() => { finishing = false; card.classList.remove('is-settling'); });
   }
 
   card.addEventListener('pointerdown', (event) => {
@@ -65,7 +66,7 @@ export function bindNotificationDrag(card, api, onError) {
   window.addEventListener('blur', () => finish({}, true));
   card.addEventListener('dragstart', (event) => event.preventDefault());
   card.addEventListener('click', (event) => {
-    if (!suppressClick) return;
+    if (!suppressClick && !finishing) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
