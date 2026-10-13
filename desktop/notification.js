@@ -1,3 +1,5 @@
+import { bindNotificationDrag } from './notification-drag.js';
+
 const api = window.hotdealNotification;
 const $ = (id) => document.getElementById(id);
 let sequence = 0;
@@ -8,7 +10,7 @@ function render(payload) {
   $('error').hidden = true;
   $('heading').textContent = payload.test ? '테스트 알림' : `새 핫딜 ${payload.total}개가 도착했습니다`;
   $('summary').textContent = payload.test ? '실제 게시글 수집·저장 없이 미리보기' : '아카라이브 핫딜 · 방금 수집한 새 글';
-  $('detail').textContent = payload.total > 3 ? `외 ${payload.total - 3}개 · 마우스를 올리면 유지` : '8초 후 닫힘 · 마우스를 올리면 유지';
+  $('detail').textContent = payload.total > 3 ? `외 ${payload.total - 3}개 · 오른쪽으로 밀어 닫기` : '8초 후 닫힘 · 오른쪽으로 밀어 닫기';
   const fragment = document.createDocumentFragment();
   for (const article of payload.articles) {
     const row = document.createElement(payload.test ? 'div' : 'button');
@@ -37,5 +39,6 @@ $('open-list').addEventListener('click', () => api.openList().catch(fail));
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') api.close().catch(fail); });
 document.body.addEventListener('mouseenter', () => api.hover(true).catch(fail));
 document.body.addEventListener('mouseleave', () => api.hover(false).catch(fail));
+bindNotificationDrag(document.querySelector('.card'), api, fail);
 api.onUpdate(render);
 api.ready().then(render).catch(fail);

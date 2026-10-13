@@ -100,7 +100,8 @@ export class ServerController extends EventEmitter {
       // Validate saved files on every start, preserving corrupt files for recovery.
       const store = new ArticleStore({ path: resolve(this.#config.directory, 'articles.json'), maxArticles: this.#config.maxArticles });
       await store.load();
-      this.#articleTracker = new NewArticleTracker(store.getSnapshot().articles);
+      const baseline = store.getSnapshot();
+      this.#articleTracker = new NewArticleTracker(baseline.updatedAt ? baseline.articles : null);
       await loadInterval(resolve(this.#config.directory, 'settings.json'));
       this.#state.userAgent = await loadUserAgent(resolve(this.#config.directory, 'browser-settings.json'));
       if (this.#config.port) {
@@ -113,7 +114,7 @@ export class ServerController extends EventEmitter {
           this.#state.owned = false;
           // The attached server may use a different data folder: seed from its API.
           const baseline = await this.#http('/api/articles?limit=1000&offset=0');
-          this.#articleTracker = new NewArticleTracker(baseline.articles);
+          this.#articleTracker = new NewArticleTracker(baseline.updatedAt ? baseline.articles : null);
           this.#externalArticlesAt = baseline.updatedAt;
           this.#updateStatus(existing);
           this.log('info', '별도로 실행 중인 서버에 연결했습니다. 연결 해제 시 해당 서버는 계속 실행됩니다.');

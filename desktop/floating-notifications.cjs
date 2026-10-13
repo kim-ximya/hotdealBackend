@@ -10,6 +10,7 @@ class FloatingNotifications {
   #sequence = 0;
   #disposed = false;
   #hovered = false;
+  #drag = null;
   #page = pathToFileURL(path.join(__dirname, 'notification.html')).href;
 
   constructor({ BrowserWindow, ipcMain, screen, getMainWindow, showMainWindow, openArticle,
@@ -21,6 +22,12 @@ class FloatingNotifications {
       try {
         if (action === 'ready') return { ok: true, value: this.#payload };
         if (action === 'close') this.dismiss();
+        else if (['drag-start', 'drag-move', 'drag-end'].includes(action)) {
+          if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 1000000) throw new Error('드래그 좌표가 올바르지 않습니다.');
+          if (action === 'drag-start') this.#startDrag(value);
+          else if (action === 'drag-move') this.#moveDrag(value);
+          else return { ok: true, value: this.#finishDrag(value) };
+        } else if (action === 'drag-cancel') this.#finishDrag(0, true);
         else if (action === 'hover' && typeof value === 'boolean') {
           this.#hovered = value;
           if (value) this.#cancelTimer(); else this.#armTimer();
@@ -32,7 +39,7 @@ class FloatingNotifications {
         return { ok: true };
       } catch (error) { return { ok: false, error: error.message }; }
     });
-    this.#deps.displayChanged = () => this.#position();
+    this.#deps.displayChanged = () => { this.#finishDrag(0, true); this.#position(); };
     for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, this.#deps.displayChanged);
   }
 
@@ -57,7 +64,8 @@ class FloatingNotifications {
     }
     const win = new this.#deps.BrowserWindow({
       width: 396, height: 240, title: '새 핫딜 알림', show: false,
-      frame: false, transparent: true, resizable: false, maximizable: false, minimizable: false,
+      frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
+      resizable: false, maximizable: false, minimizable: false,
       fullscreenable: false, alwaysOnTop: true, skipTaskbar: true,
       webPreferences: { preload: path.join(__dirname, 'notification-preload.cjs'),
         contextIsolation: true, nodeIntegration: false, sandbox: true, autoplayPolicy: 'no-user-gesture-required' },
@@ -74,12 +82,14 @@ class FloatingNotifications {
       this.#articles = [];
       this.#payload = null;
       this.#hovered = false;
+      this.#drag = null;
       this.#cancelTimer();
     });
     win.once('ready-to-show', () => {
       if (this.#window !== win || this.#disposed) return;
       this.#position();
       win.showInactive();
+      win.setAlwaysOnTop(true, 'pop-up-menu');
       win.moveTop();
       this.#armTimer();
     });
@@ -90,7 +100,7 @@ class FloatingNotifications {
   }
 
   #position() {
-    if (!this.#window || this.#window.isDestroyed()) return;
+    if (!this.#window || this.#window.isDestroyed() || this.#drag) return;
     const main = this.#deps.getMainWindow();
     const display = main && !main.isDestroyed()
       ? this.#deps.screen.getDisplayMatching(main.getBounds()) : this.#deps.screen.getPrimaryDisplay();
@@ -108,7 +118,40 @@ class FloatingNotifications {
 
   #armTimer() {
     this.#cancelTimer();
-    if (this.#window && !this.#hovered) this.#timer = this.#deps.setTimer(() => this.dismiss(), 8000);
+    if (this.#window && !this.#hovered && !this.#drag) this.#timer = this.#deps.setTimer(() => this.dismiss(), 8000);
+  }
+
+  #startDrag(screenX) {
+    if (this.#drag) throw new Error('이미 알림을 드래그하고 있습니다.');
+    const origin = this.#window.getBounds();
+    const { workArea } = this.#deps.screen.getDisplayMatching(origin);
+    this.#drag = { origin, startX: screenX, edge: workArea.x + workArea.width, distance: 0 };
+    this.#cancelTimer();
+  }
+
+  #moveDrag(screenX) {
+    if (!this.#drag) throw new Error('드래그가 시작되지 않았습니다.');
+    const drag = this.#drag;
+    drag.distance = Math.min(drag.origin.width, Math.max(0, screenX - drag.startX));
+    this.#window.setBounds({ ...drag.origin, x: drag.origin.x + Math.round(drag.distance) });
+  }
+
+  #finishDrag(screenX, cancelled = false) {
+    if (!this.#drag) return false;
+    if (!cancelled) this.#moveDrag(screenX);
+    const drag = this.#drag;
+    this.#drag = null;
+    // Also allow a short swipe from the right side when the pointer reaches the
+    // monitor edge; such a swipe cannot travel 1/4 of the card's width.
+    if (!cancelled && (drag.distance >= Math.min(96, drag.origin.width / 4) ||
+        (drag.distance >= 12 && screenX >= drag.edge - 2))) {
+      this.dismiss();
+      return true;
+    }
+    this.#window.setBounds(drag.origin);
+    this.#position();
+    this.#armTimer();
+    return false;
   }
 
   dismiss() {

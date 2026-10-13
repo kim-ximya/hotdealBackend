@@ -6,14 +6,14 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; media-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>새 핫딜 알림</title>
   <link rel="stylesheet" href="notification.css">
-  <script src="notification.js" defer></script>
+  <script type="module" src="notification.js"></script>
 </head>
 <body>
-  <section class="card" aria-label="새 핫딜 알림">
+  <section class="card" aria-label="새 핫딜 알림" title="오른쪽으로 드래그하여 닫기 · 마우스를 올리면 자동 닫기 일시 정지">
     <header><span class="brand" aria-hidden="true">H</span><div><strong id="heading">새 핫딜이 도착했습니다</strong><p id="summary">핫딜 수집 관리자</p></div><button id="close" class="close" aria-label="알림 닫기">×</button></header>
     <div id="articles" class="articles"></div>
     <p id="error" role="alert" hidden></p>
-    <footer><span id="detail">8초 후 닫힘 · 마우스를 올리면 유지</span><button id="open-list">목록 열기 ↗</button></footer>
+    <footer><span id="detail">8초 후 닫힘 · 오른쪽으로 밀어 닫기</span><button id="open-list">목록 열기 ↗</button></footer>
   </section>
   <audio id="chime" preload="auto" src="assets/notification.wav"></audio>
 </body>

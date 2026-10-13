@@ -109,6 +109,27 @@ test('failed atomic persistence does not publish a new snapshot or overwrite the
   assert.equal(await readFile(path, 'utf8'), diskBefore);
 });
 
+test('collection events include only committed retained rows and never announce a failed save', async (t) => {
+  let fail = false;
+  const { service, store } = await serviceFixture(t, {
+    collect: async () => [article('2'), article('3'), article('4', { author: '*운영진' })],
+    storeOptions: { maxArticles: 1, write: async (...args) => {
+      if (fail) throw new Error('disk full');
+      await atomicWriteJson(...args);
+    } },
+  });
+  const events = [];
+  service.on('collected', (event) => events.push(event));
+  fail = true;
+  assert.equal((await service.collectNow()).ok, false);
+  assert.equal(events.length, 0);
+  assert.equal(store.getSnapshot().total, 0);
+  fail = false;
+  assert.equal((await service.collectNow()).ok, true);
+  assert.deepEqual(events[0].articles.map(({ id }) => id), ['3']);
+  assert.deepEqual(events[0].articles, store.getSnapshot().articles);
+});
+
 test('corrupt stored JSON fails safely without rewriting the file', async (t) => {
   const directory = await temporary(t);
   const path = join(directory, 'articles.json');

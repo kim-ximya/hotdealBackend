@@ -120,8 +120,10 @@ export class CrawlService extends EventEmitter {
       this.#lastError = null;
       this.#successes++;
       this.#consecutiveFailures = 0;
-      // Forward the successfully persisted collection, never an uncommitted fetch.
-      this.emit('collected', { ...result, articles: structuredClone(articles) });
+      // Announce only rows retained in the committed JSON, including when the
+      // retention limit is smaller than a single fetched page.
+      const collectedIds = new Set(articles.map(({ id }) => id));
+      this.emit('collected', { ...result, articles: this.#store.getSnapshot().articles.filter(({ id }) => collectedIds.has(id)) });
       return { ok: true, ...result };
     }).catch((error) => {
       if (this.#stopping && signal.aborted) return { ok: false, stopped: true };
