@@ -52,6 +52,19 @@ export class ServerController extends EventEmitter {
     this.#publish();
   }
   clearLogs() { this.#state.logs = []; this.#publish(); }
+  async getArticles(query = {}) {
+    if (!query || typeof query !== 'object' || Array.isArray(query) || Object.keys(query).some((key) => !['limit', 'offset'].includes(key))) throw new Error('목록 조회 조건이 올바르지 않습니다.');
+    const { limit = 50, offset = 0 } = query;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000 || !Number.isSafeInteger(offset) || offset < 0) throw new Error('limit는 1~1000, offset은 0 이상의 정수여야 합니다.');
+    if (this.#state.phase === 'running') {
+      return { ...await this.#http(`/api/articles?limit=${limit}&offset=${offset}`), source: 'api' };
+    }
+    const store = new ArticleStore({ path: resolve(this.#config.directory, 'articles.json'), maxArticles: this.#config.maxArticles });
+    await store.load();
+    const snapshot = store.getSnapshot();
+    const articles = snapshot.articles.slice(offset, offset + limit);
+    return { ...snapshot, articles, limit, offset, returnedCount: articles.length, source: 'file' };
+  }
   #queue(action) {
     const task = this.#serial.then(action);
     this.#serial = task.catch(() => {});

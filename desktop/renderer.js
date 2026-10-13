@@ -1,4 +1,7 @@
+import { ArticleListView } from './article-list.js';
+
 const $ = (id) => document.getElementById(id);
+const articleList = new ArticleListView(window.hotdeal);
 let current;
 let busy = false;
 let dirty = false;
@@ -110,6 +113,7 @@ function render(snapshot) {
   $('attention').hidden = !running || !status?.browser?.attentionRequired;
   $('footer-state').textContent = running ? 'JSON 저장 · 로컬 API 제공 중' : '로컬에서 안전하게 보관';
   renderCountdown(); renderLogs(snapshot);
+  articleList.sync(snapshot);
 }
 $('start').addEventListener('click', () => action(() => window.hotdeal.start(), '서버를 시작했습니다.'));
 $('stop').addEventListener('click', () => action(() => window.hotdeal.stop(), current?.owned ? '서버를 중지했습니다.' : '연결을 해제했습니다.'));
@@ -130,22 +134,28 @@ $('user-agent-form').addEventListener('submit', (event) => {
     return snapshot;
   }, 'User-Agent를 저장했습니다. 다음 서버 시작부터 적용됩니다.');
 });
-for (const id of ['collection-tab', 'browser-tab']) {
-  $(id).addEventListener('click', () => {
-    for (const [tab, panel] of [['collection-tab', 'collection-settings'], ['browser-tab', 'browser-settings']]) {
-      const selected = tab === id;
-      $(tab).setAttribute('aria-selected', String(selected));
-      $(tab).tabIndex = selected ? 0 : -1;
-      $(panel).hidden = !selected;
-    }
-  });
-  $(id).addEventListener('keydown', (event) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    const next = event.key === 'Home' ? 'collection-tab' : event.key === 'End' ? 'browser-tab' : id === 'collection-tab' ? 'browser-tab' : 'collection-tab';
-    $(next).click(); $(next).focus();
-  });
+function bindTabs(tabs) {
+  for (const [id] of tabs) {
+    $(id).addEventListener('click', () => {
+      for (const [tab, panel] of tabs) {
+        const selected = tab === id;
+        $(tab).setAttribute('aria-selected', String(selected));
+        $(tab).tabIndex = selected ? 0 : -1;
+        $(panel).hidden = !selected;
+      }
+    });
+    $(id).addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const index = tabs.findIndex(([tab]) => tab === id);
+      const next = event.key === 'Home' ? tabs[0][0] : event.key === 'End' ? tabs.at(-1)[0]
+        : tabs[(index + (event.key === 'ArrowLeft' ? tabs.length - 1 : 1)) % tabs.length][0];
+      $(next).click(); $(next).focus();
+    });
+  }
 }
+bindTabs([['deals-tab', 'deals-view'], ['settings-tab', 'settings-view']]);
+bindTabs([['collection-tab', 'collection-settings'], ['browser-tab', 'browser-settings']]);
 $('open-data').addEventListener('click', () => action(() => window.hotdeal.openData()));
 $('clear-logs').addEventListener('click', () => action(() => window.hotdeal.clearLogs()));
 $('log-filter').addEventListener('change', () => { if (current) renderLogs(current); });

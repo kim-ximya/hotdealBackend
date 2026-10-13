@@ -8,6 +8,7 @@ import { ServerController } from '../desktop/server-controller.js';
 import { createServerRuntime } from '../src/server-runtime.js';
 import { readServerConfig } from '../src/server-config.js';
 import { loadUserAgent } from '../src/browser-settings.js';
+import { ArticleStore } from '../src/article-store.js';
 
 const article = { id: '123', url: 'https://arca.live/b/hotdeal/123', title: '테스트 핫딜', author: '일반 사용자' };
 async function directory(t) {
@@ -119,6 +120,9 @@ test('external server attaches through HTTP; interval and manual requests work; 
   t.after(() => controller.stop());
   await controller.start();
   assert.equal(controller.snapshot().owned, false);
+  const externalList = await controller.getArticles({ limit: 1 });
+  assert.equal(externalList.source, 'api');
+  assert.equal(externalList.articles[0].id, '123');
   await assert.rejects(controller.setUserAgent('External/1.0'), /외부 서버/);
   await assert.rejects(readFile(join(otherPath, 'browser-settings.json')), { code: 'ENOENT' });
   await controller.setIntervalSeconds(300);
@@ -222,4 +226,56 @@ test('invalid saved browser settings block startup and preserve the file', async
   await assert.rejects(controller.start(), /브라우저 설정/);
   assert.equal(spawned, false);
   assert.equal(await readFile(file, 'utf8'), '{"userAgent":123}');
+});
+
+test('article list works while stopped, reads fresh saved JSON and paginates newest IDs without collecting', async (t) => {
+  let calls = 0;
+  const { controller, path } = await fixture(t, async () => { calls++; return [article]; });
+  const empty = await controller.getArticles();
+  assert.equal(empty.total, 0);
+  assert.equal(empty.source, 'file');
+  const store = new ArticleStore({ path: join(path, 'articles.json') });
+  await store.save(Array.from({ length: 63 }, (_, index) => ({ ...article, id: String(index + 1), url: `https://arca.live/b/hotdeal/${index + 1}` })));
+  const first = await controller.getArticles();
+  assert.equal(first.total, 63);
+  assert.equal(first.returnedCount, 50);
+  assert.equal(first.articles[0].id, '63');
+  assert.equal(first.articles.at(-1).id, '14');
+  const second = await controller.getArticles({ limit: 50, offset: 50 });
+  assert.equal(second.returnedCount, 13);
+  assert.equal(second.articles[0].id, '13');
+  assert.equal(second.articles.at(-1).id, '1');
+  await store.save([{ ...article, title: '갱신된 제목' }]);
+  assert.equal((await controller.getArticles()).articles[0].title, '갱신된 제목');
+  assert.equal(calls, 0);
+  assert.equal(controller.snapshot().phase, 'stopped');
+});
+
+test('running article queries use the API snapshot, never trigger site collection and remain available after stop', async (t) => {
+  let calls = 0;
+  const { controller, workers } = await fixture(t, async () => { calls++; return [{ ...article, title: `수집 ${calls}` }]; });
+  await controller.start();
+  await workers[0].runtime.service.collectNow();
+  assert.equal((await controller.getArticles()).source, 'api');
+  assert.equal((await controller.getArticles()).articles[0].title, '수집 1');
+  assert.equal(calls, 1);
+  await controller.collectNow();
+  await workers[0].runtime.service.collectNow();
+  assert.equal((await controller.getArticles()).articles[0].title, '수집 2');
+  assert.equal(calls, 2);
+  await controller.stop();
+  const saved = await controller.getArticles();
+  assert.equal(saved.source, 'file');
+  assert.equal(saved.articles[0].title, '수집 2');
+});
+
+test('article queries reject invalid pagination and report corrupt saved JSON without rewriting it', async (t) => {
+  const { controller, path } = await fixture(t);
+  for (const query of [null, [], { limit: 0 }, { limit: 1001 }, { limit: '50' }, { offset: -1 }, { offset: 0.5 }, { path: '../secret' }]) {
+    await assert.rejects(controller.getArticles(query));
+  }
+  const file = join(path, 'articles.json');
+  await writeFile(file, '{broken');
+  await assert.rejects(controller.getArticles(), /기존 파일을 보존/);
+  assert.equal(await readFile(file, 'utf8'), '{broken');
 });

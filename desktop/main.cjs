@@ -39,6 +39,11 @@ else {
       snapshot: () => controller.snapshot(), start: () => controller.start(), stop: () => controller.stop(),
       interval: (value) => controller.setIntervalSeconds(value), collect: () => controller.collectNow(),
       userAgent: (value) => controller.setUserAgent(value),
+      articles: (query) => controller.getArticles(query),
+      openArticle: (id) => {
+        if (typeof id !== 'string' || !/^\d{1,30}$/.test(id)) throw new Error('게시글 ID가 올바르지 않습니다.');
+        return shell.openExternal(`https://arca.live/b/hotdeal/${id}`);
+      },
       clearLogs: () => { controller.clearLogs(); return controller.snapshot(); },
       openData: async () => { await mkdir(config.directory, { recursive: true }); const error = await shell.openPath(config.directory); if (error) throw new Error(error); },
     };
