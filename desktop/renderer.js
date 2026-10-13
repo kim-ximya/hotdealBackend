@@ -1,0 +1,116 @@
+const $ = (id) => document.getElementById(id);
+let current;
+let busy = false;
+let dirty = false;
+let toastTimer;
+let logSignature;
+let actionError = null;
+const time = (value) => value ? new Date(value).toLocaleTimeString('en-GB', { hour12: false }) : '기록 없음';
+const date = (value) => value ? new Date(value).toLocaleDateString('ko-KR') : '첫 수집을 기다리고 있습니다.';
+const intervalText = (seconds) => seconds % 60 === 0 ? `${seconds / 60}분` : `${seconds}초`;
+const stages = { idle: '대기 중', 'starting-browser': 'Chrome 시작 중', navigating: '페이지 접속 중', 'waiting-for-list': '목록 대기 중', parsing: '목록 분석 중', error: '오류 확인 필요', closed: '중지됨' };
+
+function toast(message) {
+  clearTimeout(toastTimer);
+  $('toast').textContent = message;
+  $('toast').hidden = false;
+  toastTimer = setTimeout(() => { $('toast').hidden = true; }, 3500);
+}
+async function action(operation, message) {
+  if (busy) return;
+  busy = true;
+  actionError = null;
+  if (current) render(current);
+  try {
+    const snapshot = await operation();
+    if (snapshot) render(snapshot);
+    if (message) toast(message);
+  } catch (error) { actionError = error.message; }
+  finally { busy = false; if (current) render(current); }
+}
+function renderLogs(snapshot) {
+  const filter = $('log-filter').value;
+  const signature = `${filter}/${snapshot.logs[0]?.id}/${snapshot.logs.at(-1)?.id}/${snapshot.logs.length}`;
+  if (signature === logSignature) return;
+  logSignature = signature;
+  const list = $('log-list');
+  const top = list.scrollTop;
+  const lines = snapshot.logs.filter((log) => filter === 'all' || filter === log.level);
+  const fragment = document.createDocumentFragment();
+  for (const log of lines) {
+    const row = document.createElement('div');
+    row.className = `log-line ${['error', 'browser'].includes(log.level) ? log.level : 'info'}`;
+    for (const [className, value] of [['log-time', time(log.at)], ['log-level', log.level === 'error' ? 'ERROR' : log.level === 'browser' ? 'CHROME' : 'INFO'], ['log-message', log.message]]) {
+      const span = document.createElement('span'); span.className = className; span.textContent = value; row.append(span);
+    }
+    fragment.append(row);
+  }
+  if (!lines.length) { const empty = document.createElement('div'); empty.className = 'empty-log'; empty.textContent = '표시할 로그가 없습니다.'; fragment.append(empty); }
+  list.replaceChildren(fragment);
+  $('log-count').textContent = snapshot.logs.length;
+  list.scrollTop = $('auto-scroll').checked ? list.scrollHeight : top;
+}
+function renderCountdown() {
+  const status = current?.status;
+  if (status?.isCollecting && current.phase === 'running') {
+    $('next-run').textContent = '수집 중'; $('next-detail').textContent = '완료 후 다음 수집이 예약됩니다.';
+  } else if (status?.nextRunAt && current.phase === 'running') {
+    const seconds = Math.max(0, Math.ceil((Date.parse(status.nextRunAt) - Date.now()) / 1000));
+    $('next-run').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+    $('next-detail').textContent = `${time(status.nextRunAt)} 수집 예정`;
+  } else { $('next-run').textContent = '—'; $('next-detail').textContent = '서버를 시작하면 예약됩니다.'; }
+}
+function render(snapshot) {
+  current = snapshot;
+  const { phase, owned, status } = snapshot;
+  const running = phase === 'running';
+  const transitioning = phase === 'starting' || phase === 'stopping';
+  $('phase-label').textContent = { stopped: '서버 중지', starting: '시작 중', stopping: '종료 중', running: owned ? '서버 실행 중' : '외부 서버 연결', error: '오류 확인 필요' }[phase];
+  $('status-dot').className = `dot ${phase}`;
+  $('headline').textContent = { stopped: '수집을 시작할 준비가 되었습니다.', starting: '서버와 전용 Chrome을 시작합니다.', stopping: '수집 서버를 안전하게 종료합니다.', running: status?.isCollecting ? '핫딜 게시글을 수집하고 있습니다.' : '다음 핫딜 수집을 기다리고 있습니다.', error: '서버 상태를 확인해 주세요.' }[phase];
+  $('subline').textContent = running ? `${intervalText(snapshot.intervalSeconds)}마다 자동 수집 · ${owned ? '앱에서 시작한 서버' : '별도로 실행 중인 서버'}` : phase === 'stopping' ? '진행 중인 작업을 정리하고 전용 Chrome을 닫습니다.' : '수집한 게시글은 JSON으로 저장하고 로컬 API로 제공합니다.';
+  $('start').disabled = busy || running || transitioning || (phase === 'error' && owned);
+  $('stop').disabled = busy || (phase === 'stopped') || transitioning;
+  $('stop').textContent = !owned && running ? '연결 해제' : '서버 중지';
+  $('collect').disabled = busy || !running || status?.isCollecting;
+  $('apply').disabled = busy || transitioning;
+  $('open-data').disabled = busy || (running && !owned);
+  $('article-count').textContent = (status?.articleCount || 0).toLocaleString('ko-KR');
+  $('last-success').textContent = time(status?.lastSuccessAt);
+  $('last-date').textContent = date(status?.lastSuccessAt);
+  $('browser-stage').textContent = stages[status?.browser?.stage] || '대기 중';
+  $('run-count').textContent = `이번 실행 성공 ${status?.successes || 0}회 / 시도 ${status?.attempts || 0}회`;
+  $('saved-interval').textContent = intervalText(snapshot.intervalSeconds);
+  $('saved-note').textContent = !owned && running ? '외부 서버의 설정에 저장합니다.' : '재시작 후에도 유지됩니다.';
+  if (!dirty) {
+    const inMinutes = snapshot.intervalSeconds % 60 === 0;
+    $('unit').value = inMinutes ? '60' : '1';
+    $('interval').value = snapshot.intervalSeconds / Number($('unit').value);
+    $('interval').max = inMinutes ? '1440' : '86400';
+  }
+  $('data-path').textContent = !owned && running ? '외부 서버의 데이터 폴더를 사용합니다.' : snapshot.dataDirectory;
+  $('data-path').title = $('data-path').textContent;
+  $('api-url').textContent = running ? snapshot.baseUrl : '서버 시작 후 표시됩니다.';
+  const error = actionError || snapshot.error || status?.lastError?.message;
+  $('error').hidden = !error;
+  $('error').textContent = error || '';
+  $('attention').hidden = !running || !status?.browser?.attentionRequired;
+  $('footer-state').textContent = running ? 'JSON 저장 · 로컬 API 제공 중' : '로컬에서 안전하게 보관';
+  renderCountdown(); renderLogs(snapshot);
+}
+$('start').addEventListener('click', () => action(() => window.hotdeal.start(), '서버를 시작했습니다.'));
+$('stop').addEventListener('click', () => action(() => window.hotdeal.stop(), current?.owned ? '서버를 중지했습니다.' : '연결을 해제했습니다.'));
+$('collect').addEventListener('click', () => action(() => window.hotdeal.collect(), '즉시 수집을 요청했습니다.'));
+$('interval').addEventListener('input', () => { dirty = true; });
+$('unit').addEventListener('change', () => { dirty = true; $('interval').max = Number($('unit').value) === 60 ? '1440' : '86400'; });
+$('interval-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const seconds = Number($('interval').value) * Number($('unit').value);
+  void action(async () => { const snapshot = await window.hotdeal.setInterval(seconds); dirty = false; return snapshot; }, '수집 간격을 저장했습니다.');
+});
+$('open-data').addEventListener('click', () => action(() => window.hotdeal.openData()));
+$('clear-logs').addEventListener('click', () => action(() => window.hotdeal.clearLogs()));
+$('log-filter').addEventListener('change', () => { if (current) renderLogs(current); });
+window.hotdeal.onSnapshot(render);
+window.hotdeal.snapshot().then(render).catch((error) => { $('error').textContent = error.message; $('error').hidden = false; });
+setInterval(renderCountdown, 1000);

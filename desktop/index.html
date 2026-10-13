@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>핫딜 수집 관리자</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="renderer.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand"><div class="brand-mark" aria-hidden="true">H<span>:</span>D</div><div><h1>핫딜 수집 관리자</h1><p>아카라이브 핫딜 채널 · Selenium</p></div></div>
+      <div class="header-status"><span class="dot" id="status-dot"></span><span id="phase-label">준비 중</span></div>
+    </header>
+
+    <main>
+      <section class="control-panel" aria-label="서버 제어">
+        <div><div class="eyebrow">COLLECTION SERVER</div><h2 id="headline">저장된 설정을 읽고 있습니다.</h2><p id="subline">잠시 기다려 주세요.</p></div>
+        <div class="actions"><button id="start" class="primary" disabled><span aria-hidden="true">▶</span> 서버 시작</button><button id="stop" disabled>서버 중지</button><button id="collect" disabled><span aria-hidden="true">↻</span> 지금 수집</button></div>
+      </section>
+      <div id="error" class="banner error" role="alert" hidden></div>
+      <div id="attention" class="banner attention" hidden>열린 전용 Chrome에서 보안 확인을 직접 완료해 주세요. 목록이 표시되면 수집을 계속합니다.</div>
+
+      <section class="metrics" aria-label="수집 현황">
+        <article class="metric"><div class="metric-label">보관 중인 게시글 <span aria-hidden="true">▤</span></div><div class="metric-value"><strong id="article-count">0</strong><span>개</span></div><p>JSON에 저장된 누적 게시글</p></article>
+        <article class="metric"><div class="metric-label">마지막 수집 성공 <span aria-hidden="true">✓</span></div><div class="metric-value compact" id="last-success">기록 없음</div><p id="last-date">첫 수집을 기다리고 있습니다.</p></article>
+        <article class="metric"><div class="metric-label">다음 수집까지 <span aria-hidden="true">◷</span></div><div class="metric-value"><strong id="next-run">—</strong></div><p id="next-detail">서버를 시작하면 예약됩니다.</p></article>
+        <article class="metric"><div class="metric-label">브라우저 상태 <span aria-hidden="true">▣</span></div><div class="metric-value compact" id="browser-stage">중지됨</div><p id="run-count">이번 실행 성공 0회 / 시도 0회</p></article>
+      </section>
+
+      <div class="workspace">
+        <aside class="settings panel">
+          <div class="panel-heading"><h2>수집 설정</h2><span class="tag">재시작 유지</span></div>
+          <form id="interval-form">
+            <label for="interval">수집 간격</label>
+            <div class="input-row"><input id="interval" type="number" min="1" max="1440" step="1" value="3" required><select id="unit" aria-label="수집 간격 단위"><option value="60">분</option><option value="1">초</option></select></div>
+            <p class="help">기본 3분 · 1초부터 24시간까지 설정 가능</p>
+            <button id="apply" type="submit" class="wide">간격 적용</button>
+            <p class="saved">현재 적용 <strong id="saved-interval">3분</strong><span id="saved-note">재시작 후에도 유지됩니다.</span></p>
+          </form>
+          <div class="divider"></div>
+          <div class="section-label">데이터 저장 위치</div><p class="path" id="data-path">—</p>
+          <button class="text-button" id="open-data">저장 폴더 열기 <span aria-hidden="true">↗</span></button>
+          <div class="divider"></div>
+          <div class="section-label">로컬 API</div><code id="api-url">서버 시작 후 표시됩니다.</code>
+          <p class="help" id="api-detail">저장된 목록: /api/articles</p>
+        </aside>
+
+        <section class="logs panel" aria-label="실행 로그">
+          <div class="panel-heading"><div class="log-title"><h2>실행 로그</h2><span id="log-count" class="tag">0</span></div><div class="log-tools"><select id="log-filter" aria-label="로그 필터"><option value="all">전체</option><option value="error">오류</option><option value="browser">브라우저</option></select><button id="clear-logs" class="text-button">비우기</button></div></div>
+          <div class="log-list" id="log-list" role="log" aria-label="실행 로그 목록" aria-live="off"></div>
+          <div class="log-footer"><label><input id="auto-scroll" type="checkbox" checked> 새 로그 자동 스크롤</label><span>현재 앱 세션 · 최근 500개</span></div>
+        </section>
+      </div>
+    </main>
+    <footer class="footer"><span><span class="tiny-dot"></span> <span id="footer-state">로컬에서 안전하게 보관</span></span><span>목록 첫 페이지 수집 · 작성자 * 제외</span></footer>
+  </div>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>
