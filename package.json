@@ -2,6 +2,7 @@
   "name": "hotdeal-backend",
   "version": "1.0.0",
   "private": true,
+  "main": "desktop/main.cjs",
   "description": "Selenium으로 핫딜 게시글을 주기적으로 수집·저장하는 JSON API 서버",
   "type": "module",
   "engines": {
@@ -11,13 +12,37 @@
     "start": "node main.js",
     "desktop": "electron desktop/main.cjs",
     "desktop:install": "node node_modules/electron/install.js",
-    "test": "node --test"
+    "test": "node --test test/*.test.js",
+    "pack:win": "electron-builder --win --x64 --dir --publish never",
+    "dist:win": "electron-builder --win --x64 --publish never && node build/checksums.cjs"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
     "selenium-webdriver": "^4.51.0"
   },
   "devDependencies": {
-    "electron": "^44.7.0"
+    "electron": "^44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.hotdealcollector.desktop",
+    "productName": "핫딜 수집 관리자",
+    "directories": { "output": "release" },
+    "files": ["desktop/**/*", "src/**/*", "package.json", "!node_modules/selenium-webdriver/bin/linux*/**", "!node_modules/selenium-webdriver/bin/macos/**"],
+    "asarUnpack": ["node_modules/selenium-webdriver/bin/windows/**"],
+    "npmRebuild": false,
+    "afterPack": "build/verify-package.cjs",
+    "extraResources": [{ "from": "docs/release-1.0.md", "to": "사용 안내.md" }],
+    "electronDist": "node_modules/electron/dist",
+    "win": { "target": "nsis", "icon": "desktop/assets/hotdeal.ico", "executableName": "HotdealCollector" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
+      "artifactName": "HotdealCollector-Setup-${version}-${arch}.${ext}"
+    }
   }
 }

@@ -9,6 +9,12 @@ Selenium이 실행한 **헤드리스 Chrome**에서 아카라이브 핫딜 목�
 
 ## 실행
 
+### Windows 1.0 설치판
+
+`release/HotdealCollector-Setup-1.0.0-x64.exe`로 설치할 수 있습니다. Node.js를 따로 설치할 필요가 없으며 Google Chrome은 필요합니다. 설치판은 `%APPDATA%\HotdealCollector`에 데이터를 저장합니다. 기존 프로젝트 데이터는 유지됩니다. 설치·이전 데이터 복사·빌드 방법은 [1.0 사용 안내](docs/release-1.0.md)를 확인하세요.
+
+### 프로젝트에서 실행
+
 Node.js 22.12 이상과 Chrome이 필요합니다. ChromeDriver는 공식 Selenium Manager가 준비합니다.
 
 ```powershell
@@ -79,7 +85,7 @@ pnpm desktop:install
 pnpm desktop
 ```
 
-최초 의존성·Electron·ChromeDriver 준비에는 다운로드가 필요합니다. 현재는 프로젝트에서 실행하는 개발용 앱이며 Windows 설치 패키지는 포함하지 않습니다.
+최초 의존성·Electron·ChromeDriver 준비에는 다운로드가 필요합니다. Windows 설치 패키지는 `pnpm dist:win`으로 만들 수 있습니다.
 
 ### 터미널에서 서버만 실행
 

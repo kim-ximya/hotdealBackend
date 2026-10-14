@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, utilityProcess, shell, Menu, dialog, Tray, 
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { mkdir } = require('node:fs/promises');
+const { mkdirSync, existsSync } = require('node:fs');
+const { runtimePaths } = require('./runtime-paths.cjs');
 const { FloatingNotifications } = require('./floating-notifications.cjs');
 const { WindowsStartup, isStartupLaunch } = require('./windows-startup.cjs');
 
@@ -19,6 +21,11 @@ let showOnReady = !automaticStartRequested;
 const root = path.resolve(__dirname, '..');
 const page = pathToFileURL(path.join(__dirname, 'index.html')).href;
 const icon = path.join(__dirname, 'assets', 'hotdeal.ico');
+const paths = runtimePaths({ packaged: app.isPackaged, root, appData: app.getPath('appData'),
+  managerPackagePath: require.resolve('selenium-webdriver/package.json') });
+mkdirSync(paths.userData, { recursive: true });
+app.setPath('userData', paths.userData);
+if (app.isPackaged) app.setAppUserModelId('com.hotdealcollector.desktop');
 
 function showWindow() {
   showOnReady = true;
@@ -70,7 +77,6 @@ function updateTray(snapshot) {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.setPath('userData', path.join(root, '.local', 'desktop'));
   app.on('second-instance', (_event, argv) => {
     if (isStartupLaunch(argv)) {
       automaticStartRequested = true;
@@ -79,17 +85,24 @@ else {
   });
   app.on('activate', showWindow);
   app.whenReady().then(async () => {
-    try { process.loadEnvFile(path.join(root, '.env')); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (!app.isPackaged) {
+      try { process.loadEnvFile(path.join(root, '.env')); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    if (paths.managerPath) {
+      if (!existsSync(paths.managerPath)) throw new Error('설치 파일에서 Selenium Manager를 찾지 못했습니다. 앱을 다시 설치하세요.');
+      process.env.SE_MANAGER_PATH = paths.managerPath;
+    }
     const { readServerConfig } = await import('../src/server-config.js');
     const { ServerController } = await import('./server-controller.js');
     const { loadNotificationSettings, saveNotificationSettings } = await import('./notification-settings.js');
     const startup = new WindowsStartup({ app, root });
     const notificationSettingsPath = path.join(app.getPath('userData'), 'notification-settings.json');
-    const config = readServerConfig({ ...process.env, SELENIUM_USER_AGENT: undefined }, root);
+    const config = readServerConfig({ ...process.env, DATA_DIR: paths.dataDirectory ?? process.env.DATA_DIR,
+      SELENIUM_USER_AGENT: undefined }, paths.configRoot);
     controller = new ServerController({ config,
       spawnWorker: () => utilityProcess.fork(path.join(__dirname, 'server-worker.js'), [], {
-        cwd: root, stdio: 'pipe', serviceName: 'Hotdeal Selenium Server',
+        cwd: paths.cwd, stdio: 'pipe', serviceName: 'Hotdeal Selenium Server',
       }),
     });
     await controller.initialize();
