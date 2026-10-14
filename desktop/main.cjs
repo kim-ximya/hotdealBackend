@@ -3,6 +3,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { mkdir } = require('node:fs/promises');
 const { FloatingNotifications } = require('./floating-notifications.cjs');
+const { WindowsStartup, isStartupLaunch } = require('./windows-startup.cjs');
 
 let window;
 let controller;
@@ -12,15 +13,30 @@ let notifications;
 let notificationSettings;
 let quitting = false;
 let quitPending = false;
+let uiReady = false;
+let automaticStartRequested = isStartupLaunch(process.argv);
+let showOnReady = !automaticStartRequested;
 const root = path.resolve(__dirname, '..');
 const page = pathToFileURL(path.join(__dirname, 'index.html')).href;
 const icon = path.join(__dirname, 'assets', 'hotdeal.ico');
 
 function showWindow() {
+  showOnReady = true;
   if (!window || window.isDestroyed()) return;
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
+}
+
+async function startServerAutomatically() {
+  if (!uiReady || quitting || quitPending) return;
+  try {
+    controller.log('info', 'Windows 자동 실행으로 수집 서버를 시작합니다.');
+    await controller.start();
+  } catch (error) {
+    controller.log('error', `서버 자동 시작 실패: ${error.message}`);
+    showWindow();
+  }
 }
 
 function hideToTray() {
@@ -55,7 +71,12 @@ function updateTray(snapshot) {
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.setPath('userData', path.join(root, '.local', 'desktop'));
-  app.on('second-instance', showWindow);
+  app.on('second-instance', (_event, argv) => {
+    if (isStartupLaunch(argv)) {
+      automaticStartRequested = true;
+      if (uiReady) void startServerAutomatically();
+    } else showWindow();
+  });
   app.on('activate', showWindow);
   app.whenReady().then(async () => {
     try { process.loadEnvFile(path.join(root, '.env')); }
@@ -63,6 +84,7 @@ else {
     const { readServerConfig } = await import('../src/server-config.js');
     const { ServerController } = await import('./server-controller.js');
     const { loadNotificationSettings, saveNotificationSettings } = await import('./notification-settings.js');
+    const startup = new WindowsStartup({ app, root });
     const notificationSettingsPath = path.join(app.getPath('userData'), 'notification-settings.json');
     const config = readServerConfig({ ...process.env, SELENIUM_USER_AGENT: undefined }, root);
     controller = new ServerController({ config,
@@ -119,6 +141,12 @@ else {
         return settings;
       },
       testNotification: () => { if (!quitPending) notifications.showDemo(); },
+      startupSettings: () => startup.read(),
+      setStartupSettings: (enabled) => {
+        const settings = startup.set(enabled);
+        controller.log('info', `Windows 로그인 시 자동 실행 ${settings.enabled ? '켜짐' : '꺼짐'}`);
+        return settings;
+      },
       clearLogs: () => { controller.clearLogs(); return controller.snapshot(); },
       openData: async () => { await mkdir(config.directory, { recursive: true }); const error = await shell.openPath(config.directory); if (error) throw new Error(error); },
     };
@@ -131,8 +159,10 @@ else {
       updateTray(snapshot);
       if (window && !window.isDestroyed()) window.webContents.send('hotdeal:snapshot', snapshot);
     });
-    window.once('ready-to-show', () => window.show());
+    window.once('ready-to-show', () => { if (showOnReady) showWindow(); });
     await window.loadFile(path.join(__dirname, 'index.html'));
+    uiReady = true;
+    if (automaticStartRequested) await startServerAutomatically();
   }).catch((error) => { dialog.showErrorBox('핫딜 관리자 시작 오류', error.message); quitting = true; app.quit(); });
 
   app.on('window-all-closed', () => app.quit());

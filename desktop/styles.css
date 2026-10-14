@@ -86,7 +86,7 @@ h1{font-size:21px;margin:0 0 5px;font-weight:650;letter-spacing:-.5px}
 .settings{padding:18px}
 .settings{max-height:475px;overflow:auto;scrollbar-color:#34465b transparent;scrollbar-width:thin}
 .settings-tabs{display:flex;gap:4px;padding:4px;background:#0e1724;border-radius:8px;margin-bottom:17px}
-.settings-tabs button{flex:1;border:0;background:transparent;min-height:30px;padding:6px 9px;font-size:12px;color:var(--muted)}
+.settings-tabs button{flex:1;border:0;background:transparent;min-height:30px;padding:6px 9px;font-size:12px;color:var(--muted);white-space:nowrap}
 .settings-tabs button[aria-selected=true]{background:#27384a;color:var(--text)}
 .settings label.check-setting{display:flex;align-items:center;gap:8px;line-height:1.6;margin-bottom:14px;color:var(--text);cursor:pointer}
 .check-setting input{accent-color:var(--accent);margin:0}

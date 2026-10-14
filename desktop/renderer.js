@@ -163,7 +163,36 @@ function bindTabs(tabs) {
   }
 }
 bindTabs([['deals-tab', 'deals-view'], ['settings-tab', 'settings-view']]);
-bindTabs([['collection-tab', 'collection-settings'], ['browser-tab', 'browser-settings'], ['notification-tab', 'notification-settings']]);
+bindTabs([['collection-tab', 'collection-settings'], ['browser-tab', 'browser-settings'], ['notification-tab', 'notification-settings'], ['startup-tab', 'startup-settings']]);
+function renderStartupSettings(settings) {
+  $('startup-enabled').checked = settings.enabled;
+  $('startup-enabled').disabled = !settings.supported;
+  $('save-startup').disabled = !settings.supported;
+  $('startup-status').textContent = !settings.supported ? 'Windows에서만 사용할 수 있습니다.'
+    : settings.disabledByWindows ? '등록됨 · Windows 시작 앱에서 사용 안 함으로 설정됨'
+    : settings.enabled ? '자동 실행 켜짐 · 로그인 시 트레이와 수집 서버 시작' : '자동 실행 꺼짐';
+}
+async function refreshStartupSettings() {
+  $('refresh-startup').disabled = true;
+  try { renderStartupSettings(await window.hotdeal.startupSettings()); }
+  catch (error) { $('startup-status').textContent = error.message; }
+  finally { $('refresh-startup').disabled = false; }
+}
+void refreshStartupSettings();
+$('refresh-startup').addEventListener('click', refreshStartupSettings);
+$('startup-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('startup-enabled').disabled = true;
+  $('save-startup').disabled = true;
+  try {
+    renderStartupSettings(await window.hotdeal.setStartupSettings($('startup-enabled').checked));
+    toast('Windows 자동 실행 설정을 적용했습니다.');
+  } catch (error) {
+    $('startup-status').textContent = error.message;
+    $('startup-enabled').disabled = false;
+    $('save-startup').disabled = false;
+  }
+});
 function renderNotificationSettings(settings) {
   $('notifications-enabled').checked = settings.enabled;
   $('notification-sound').checked = settings.soundEnabled;

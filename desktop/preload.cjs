@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('hotdeal', {
   notificationSettings: () => invoke('notificationSettings'),
   setNotificationSettings: (value) => invoke('setNotificationSettings', value),
   testNotification: () => invoke('testNotification'),
+  startupSettings: () => invoke('startupSettings'),
+  setStartupSettings: (enabled) => invoke('setStartupSettings', enabled),
   onShowArticles: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('hotdeal:showArticles', listener);

@@ -57,6 +57,7 @@
             <button id="collection-tab" type="button" role="tab" aria-selected="true" aria-controls="collection-settings">수집</button>
             <button id="browser-tab" type="button" role="tab" aria-selected="false" aria-controls="browser-settings" tabindex="-1">브라우저</button>
             <button id="notification-tab" type="button" role="tab" aria-selected="false" aria-controls="notification-settings" tabindex="-1">알림</button>
+            <button id="startup-tab" type="button" role="tab" aria-selected="false" aria-controls="startup-settings" tabindex="-1">시작</button>
           </div>
           <div id="collection-settings" role="tabpanel" aria-labelledby="collection-tab">
           <form id="interval-form">
@@ -99,6 +100,17 @@
             <p class="help">서버 중지 상태에서도 테스트할 수 있습니다. 알림을 꺼도 미리보기는 표시되며, 소리는 저장된 설정을 따릅니다.</p>
             <div class="divider"></div>
             <p class="help">화면 오른쪽 아래에 8초간 표시합니다. 마우스를 올리면 유지하고, 제목을 누르면 원문을 엽니다.</p>
+          </div>
+          <div id="startup-settings" role="tabpanel" aria-labelledby="startup-tab" hidden>
+            <form id="startup-form">
+              <label class="check-setting"><input id="startup-enabled" type="checkbox" disabled> Windows 로그인 시 자동 실행</label>
+              <p class="help">로그인하면 앱이 트레이에서 시작되고, 수집 서버도 자동으로 실행됩니다.</p>
+              <button id="save-startup" type="submit" class="wide" disabled>자동 실행 설정 적용</button>
+              <p id="startup-status" class="saved" role="status">자동 실행 상태를 불러오는 중입니다.</p>
+            </form>
+            <div class="divider"></div>
+            <button id="refresh-startup" type="button" class="wide">상태 새로고침</button>
+            <p class="help">자동 실행을 해제해도 현재 실행 중인 서버는 계속 동작합니다.</p>
           </div>
         </aside>
 
