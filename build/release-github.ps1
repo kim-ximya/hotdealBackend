@@ -28,7 +28,8 @@ function Request([string]$Method, [string]$Uri, $Payload) {
   Invoke-RestMethod @parameters
 }
 function FindRelease {
-  @(Request 'Get' "$api/releases?per_page=100" $null) | Where-Object { $_.tag_name -eq $tag }
+  $items = Request 'Get' "$api/releases?per_page=100" $null
+  foreach ($item in $items) { if ($item.tag_name -eq $tag) { $item } }
 }
 try {
   $repo = Request 'Get' $api $null
