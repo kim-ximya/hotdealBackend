@@ -89,7 +89,8 @@ try {
   }
   if ($Phase -eq 'Publish') {
     if (-not $release.draft) { throw '이미 게시된 릴리즈입니다.' }
-    $release = Request 'Patch' "$api/releases/$($release.id)" @{ draft = $false; make_latest = 'true' }
+    $release = Request 'Patch' "$api/releases/$($release.id)" @{ tag_name = $tag; target_commitish = $commit; draft = $false; make_latest = 'true' }
+    if ($release.tag_name -ne $tag -or $release.draft) { throw '게시된 릴리즈 태그와 상태가 다릅니다.' }
   }
   [pscustomobject]@{ url = $release.html_url; tag = $release.tag_name; draft = $release.draft; publishedAt = $release.published_at;
     assets = @($release.assets | Select-Object name, size, digest, browser_download_url) } | ConvertTo-Json -Depth 5
