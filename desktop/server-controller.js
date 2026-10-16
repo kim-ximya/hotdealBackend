@@ -4,6 +4,7 @@ import { ArticleStore, atomicWriteJson } from '../src/article-store.js';
 import { loadInterval, validInterval } from '../src/crawl-service.js';
 import { loadUserAgent, normalizeUserAgent } from '../src/browser-settings.js';
 import { NewArticleTracker } from './new-article-tracker.js';
+import { normalizeKeywords, selectArticles } from '../src/interests.js';
 
 export class ServerController extends EventEmitter {
   #config;
@@ -58,17 +59,37 @@ export class ServerController extends EventEmitter {
   }
   clearLogs() { this.#state.logs = []; this.#publish(); }
   async getArticles(query = {}) {
-    if (!query || typeof query !== 'object' || Array.isArray(query) || Object.keys(query).some((key) => !['limit', 'offset'].includes(key))) throw new Error('목록 조회 조건이 올바르지 않습니다.');
+    if (!query || typeof query !== 'object' || Array.isArray(query) || Object.keys(query).some((key) => !['limit', 'offset', 'keywords'].includes(key))) throw new Error('목록 조회 조건이 올바르지 않습니다.');
     const { limit = 50, offset = 0 } = query;
+    const keywords = query.keywords === undefined ? undefined : normalizeKeywords(query.keywords);
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000 || !Number.isSafeInteger(offset) || offset < 0) throw new Error('limit는 1~1000, offset은 0 이상의 정수여야 합니다.');
     if (this.#state.phase === 'running') {
+      if (keywords !== undefined) {
+        const snapshot = await this.#readAllArticles();
+        return { ...selectArticles(snapshot, { limit, offset, keywords }), source: 'api' };
+      }
       return { ...await this.#http(`/api/articles?limit=${limit}&offset=${offset}`), source: 'api' };
     }
     const store = new ArticleStore({ path: resolve(this.#config.directory, 'articles.json'), maxArticles: this.#config.maxArticles });
     await store.load();
     const snapshot = store.getSnapshot();
-    const articles = snapshot.articles.slice(offset, offset + limit);
-    return { ...snapshot, articles, limit, offset, returnedCount: articles.length, source: 'file' };
+    return { ...selectArticles(snapshot, { limit, offset, keywords }), source: 'file' };
+  }
+
+  async #readAllArticles() {
+    // Read the full saved API snapshot before filtering, including older external
+    // servers that only understand limit/offset. Reads never request a crawl.
+    const first = await this.#http('/api/articles?limit=1000&offset=0');
+    if (!Array.isArray(first.articles) || !Number.isSafeInteger(first.total) || first.total < 0 || first.total > 100000) throw new Error('게시글 목록 응답이 올바르지 않습니다.');
+    const articles = [...first.articles];
+    if (articles.length !== Math.min(1000, first.total)) throw new Error('게시글 페이지 크기가 올바르지 않습니다.');
+    while (articles.length < first.total) {
+      const page = await this.#http(`/api/articles?limit=1000&offset=${articles.length}`);
+      if (page.updatedAt !== first.updatedAt || page.total !== first.total) throw new Error('목록이 갱신되었습니다. 목록 새로고침을 눌러 다시 시도하세요.');
+      if (!Array.isArray(page.articles) || page.articles.length !== Math.min(1000, first.total - articles.length)) throw new Error('게시글 페이지 크기가 올바르지 않습니다.');
+      articles.push(...page.articles);
+    }
+    return { ...first, articles };
   }
   #queue(action) {
     const task = this.#serial.then(action);

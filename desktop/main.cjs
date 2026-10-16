@@ -6,6 +6,8 @@ const { mkdirSync, existsSync } = require('node:fs');
 const { runtimePaths } = require('./runtime-paths.cjs');
 const { FloatingNotifications } = require('./floating-notifications.cjs');
 const { WindowsStartup, isStartupLaunch } = require('./windows-startup.cjs');
+const { LogWindow } = require('./log-window.cjs');
+const { AppUpdates } = require('./app-updates.cjs');
 
 let window;
 let controller;
@@ -13,6 +15,8 @@ let tray;
 let trayStatus;
 let notifications;
 let notificationSettings;
+let logWindow;
+let updates;
 let quitting = false;
 let quitPending = false;
 let uiReady = false;
@@ -50,6 +54,7 @@ function hideToTray() {
   if (quitting || quitPending) return;
   if (!tray || tray.isDestroyed()) throw new Error('트레이 아이콘을 사용할 수 없습니다.');
   if (window && !window.isDestroyed()) window.hide();
+  logWindow?.hide();
 }
 
 function openArticle(id) {
@@ -96,6 +101,8 @@ else {
     const { readServerConfig } = await import('../src/server-config.js');
     const { ServerController } = await import('./server-controller.js');
     const { loadNotificationSettings, saveNotificationSettings } = await import('./notification-settings.js');
+    const { InterestSettings } = await import('./interest-settings.js');
+    const interests = new InterestSettings(path.join(app.getPath('userData'), 'interest-settings.json'));
     const startup = new WindowsStartup({ app, root });
     const notificationSettingsPath = path.join(app.getPath('userData'), 'notification-settings.json');
     const config = readServerConfig({ ...process.env, DATA_DIR: paths.dataDirectory ?? process.env.DATA_DIR,
@@ -106,6 +113,8 @@ else {
       }),
     });
     await controller.initialize();
+    const initialInterests = await interests.initialize();
+    if (initialInterests.error) controller.log('error', initialInterests.error);
     try { notificationSettings = await loadNotificationSettings(notificationSettingsPath); }
     catch (error) {
       notificationSettings = { enabled: false, soundEnabled: true };
@@ -117,9 +126,34 @@ else {
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    logWindow = new LogWindow({ BrowserWindow, ipcMain, controller, icon });
+    updates = new AppUpdates({ updater: require('electron-updater').autoUpdater,
+      version: app.isPackaged ? app.getVersion() : require('../package.json').version,
+      enabled: app.isPackaged && process.platform === 'win32',
+      log: (level, message) => controller.log(level, message),
+      beforeInstall: async () => {
+        if (quitPending) throw new Error('앱 종료가 이미 진행 중입니다.');
+        quitPending = true;
+        notifications?.dismiss();
+        logWindow?.hide();
+        updateTray(controller.snapshot());
+        await controller.stop();
+        quitting = true;
+      },
+      installFailed: () => {
+        quitting = false;
+        quitPending = false;
+        updateTray(controller.snapshot());
+        showWindow();
+      },
+    });
+    updates.on('snapshot', (state) => {
+      if (window && !window.isDestroyed()) window.webContents.send('hotdeal:update', state);
+    });
     notifications = new FloatingNotifications({ BrowserWindow, ipcMain, screen, getMainWindow: () => window,
       showMainWindow: () => { showWindow(); window.webContents.send('hotdeal:showArticles'); },
       openArticle, getSettings: () => notificationSettings, log: (level, message) => controller.log(level, message),
+      filterArticles: (articles) => interests.filterNotifications(articles),
     });
     controller.on('new-articles', (articles) => {
       if (quitPending || quitting) return;
@@ -140,9 +174,23 @@ else {
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const actions = {
       snapshot: () => controller.snapshot(), start: () => controller.start(), stop: () => controller.stop(),
+      updateState: () => updates.snapshot(), downloadUpdate: () => updates.download(), installUpdate: () => updates.install(),
       interval: (value) => controller.setIntervalSeconds(value), collect: () => controller.collectNow(),
       userAgent: (value) => controller.setUserAgent(value),
-      articles: (query) => controller.getArticles(query),
+      articles: (query = {}) => {
+        if (!query || typeof query !== 'object' || Array.isArray(query) ||
+          Object.keys(query).some((key) => !['limit', 'offset', 'interestOnly'].includes(key)) ||
+          (query.interestOnly !== undefined && typeof query.interestOnly !== 'boolean')) throw new Error('목록 조회 조건이 올바르지 않습니다.');
+        const { interestOnly, ...pagination } = query;
+        return controller.getArticles(interestOnly ? { ...pagination, keywords: interests.read().keywords } : pagination);
+      },
+      interestSettings: () => interests.read(),
+      setInterestSettings: async (value) => {
+        const settings = await interests.save(value);
+        notifications.dismiss();
+        controller.log('info', `관심 품목 ${settings.keywords.length}개 저장 · 알림 범위: ${settings.notifyOnlyMatches ? '관심 품목만' : '모든 새 글'}`);
+        return settings;
+      },
       hideToTray,
       openArticle,
       notificationSettings: () => notificationSettings,
@@ -160,12 +208,15 @@ else {
         controller.log('info', `Windows 로그인 시 자동 실행 ${settings.enabled ? '켜짐' : '꺼짐'}`);
         return settings;
       },
-      clearLogs: () => { controller.clearLogs(); return controller.snapshot(); },
+      openLogs: () => { if (!quitPending) return logWindow.open(); },
       openData: async () => { await mkdir(config.directory, { recursive: true }); const error = await shell.openPath(config.directory); if (error) throw new Error(error); },
     };
     for (const [name, action] of Object.entries(actions)) ipcMain.handle(`hotdeal:${name}`, async (event, value) => {
       if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== page) throw new Error('허용되지 않은 요청입니다.');
-      try { return { ok: true, value: await action(value) }; }
+      try {
+        if (quitPending && !['snapshot', 'updateState', 'openLogs'].includes(name)) throw new Error('앱 종료 또는 업데이트가 진행 중입니다.');
+        return { ok: true, value: await action(value) };
+      }
       catch (error) { return { ok: false, error: error.message }; }
     });
     controller.on('snapshot', (snapshot) => {
@@ -175,6 +226,7 @@ else {
     window.once('ready-to-show', () => { if (showOnReady) showWindow(); });
     await window.loadFile(path.join(__dirname, 'index.html'));
     uiReady = true;
+    updates.start();
     if (automaticStartRequested) await startServerAutomatically();
   }).catch((error) => { dialog.showErrorBox('핫딜 관리자 시작 오류', error.message); quitting = true; app.quit(); });
 
@@ -185,6 +237,7 @@ else {
     if (quitPending) return;
     quitPending = true;
     notifications?.dismiss();
+    logWindow?.hide();
     updateTray(controller.snapshot());
     controller.stop().then(() => { quitting = true; app.quit(); }).catch((error) => {
       quitPending = false;
@@ -195,6 +248,8 @@ else {
   });
   app.on('will-quit', () => {
     notifications?.dispose();
+    logWindow?.dispose();
+    updates?.dispose();
     if (tray && !tray.isDestroyed()) tray.destroy();
   });
 }

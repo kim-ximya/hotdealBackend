@@ -9,11 +9,21 @@ contextBridge.exposeInMainWorld('hotdeal', {
   setInterval: (value) => invoke('interval', value), collect: () => invoke('collect'),
   setUserAgent: (value) => invoke('userAgent', value),
   articles: (query) => invoke('articles', query), openArticle: (id) => invoke('openArticle', id),
-  clearLogs: () => invoke('clearLogs'), openData: () => invoke('openData'),
+  openLogs: () => invoke('openLogs'), openData: () => invoke('openData'),
   hideToTray: () => invoke('hideToTray'),
+  updateState: () => invoke('updateState'),
+  downloadUpdate: () => invoke('downloadUpdate'),
+  installUpdate: () => invoke('installUpdate'),
+  onUpdate: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('hotdeal:update', listener);
+    return () => ipcRenderer.removeListener('hotdeal:update', listener);
+  },
   notificationSettings: () => invoke('notificationSettings'),
   setNotificationSettings: (value) => invoke('setNotificationSettings', value),
   testNotification: () => invoke('testNotification'),
+  interestSettings: () => invoke('interestSettings'),
+  setInterestSettings: (value) => invoke('setInterestSettings', value),
   startupSettings: () => invoke('startupSettings'),
   setStartupSettings: (enabled) => invoke('setStartupSettings', enabled),
   onShowArticles: (callback) => {

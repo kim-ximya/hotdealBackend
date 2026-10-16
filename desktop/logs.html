@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>실행 로그 · 핫딜 수집 관리자</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="logs.css">
+  <script type="module" src="logs.js"></script>
+</head>
+<body>
+  <main class="logs-app">
+    <header class="logs-heading"><div><h1>실행 로그 <span id="log-count" class="tag">0</span></h1><p>수집 서버와 브라우저의 동작을 확인합니다.</p></div><div class="log-tools"><select id="log-filter" aria-label="로그 필터"><option value="all">전체</option><option value="error">오류</option><option value="browser">브라우저</option></select><button id="clear-logs" type="button">로그 비우기</button></div></header>
+    <div id="logs-error" class="banner error" role="alert" hidden></div>
+    <section class="log-list" id="log-list" role="log" aria-label="실행 로그 목록" aria-live="off"></section>
+    <footer class="log-footer"><label><input id="auto-scroll" type="checkbox" checked> 새 로그 자동 스크롤</label><span id="logs-summary">현재 앱 세션 · 최근 500개</span></footer>
+  </main>
+</body>
+</html>

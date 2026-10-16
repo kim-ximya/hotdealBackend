@@ -9,6 +9,7 @@ import { createServerRuntime } from '../src/server-runtime.js';
 import { readServerConfig } from '../src/server-config.js';
 import { loadUserAgent } from '../src/browser-settings.js';
 import { ArticleStore } from '../src/article-store.js';
+import { InterestSettings } from '../desktop/interest-settings.js';
 
 const article = { id: '123', url: 'https://arca.live/b/hotdeal/123', title: '테스트 핫딜', author: '일반 사용자' };
 async function directory(t) {
@@ -270,6 +271,23 @@ test('running article queries use the API snapshot, never trigger site collectio
   assert.equal(saved.articles[0].title, '수집 2');
 });
 
+test('New tags agree across API pages, interest filters and stopped JSON reads without changing original titles', async (t) => {
+  const post = (id, title) => ({ ...article, id, url: `https://arca.live/b/hotdeal/${id}`, title });
+  let posts = [post('123', 'SSD 기준 글')];
+  const { controller, workers } = await fixture(t, async () => posts);
+  await controller.start();
+  await workers[0].runtime.service.collectNow();
+  posts = [post('125', 'SSD 새 글'), post('124', '생수 새 글'), ...posts];
+  await workers[0].runtime.service.collectNow();
+  assert.equal((await controller.getArticles({ limit: 1, offset: 0 })).articles[0].isNew, true);
+  assert.equal((await controller.getArticles({ limit: 1, offset: 1 })).articles[0].isNew, true);
+  const filtered = await controller.getArticles({ keywords: ['SSD'] });
+  assert.deepEqual(filtered.articles.map(({ id, isNew }) => [id, isNew]), [['125', true], ['123', false]]);
+  assert.equal(filtered.articles[0].title, 'SSD 새 글');
+  await controller.stop();
+  assert.deepEqual((await controller.getArticles({ keywords: ['SSD'] })).articles, filtered.articles);
+});
+
 test('article queries reject invalid pagination and report corrupt saved JSON without rewriting it', async (t) => {
   const { controller, path } = await fixture(t);
   for (const query of [null, [], { limit: 0 }, { limit: 1001 }, { limit: '50' }, { offset: -1 }, { offset: 0.5 }, { path: '../secret' }]) {
@@ -311,4 +329,49 @@ test('new-post events follow successful persistence, exclude the initial list, d
   posts = [{ ...next, id: '125', url: 'https://arca.live/b/hotdeal/125' }, next];
   await workers[1].runtime.service.collectNow();
   assert.deepEqual(events.at(-1).map(({ id }) => id), ['125']);
+});
+
+test('interests filter all saved pages before pagination while running and stopped without collecting again', async (t) => {
+  let calls = 0;
+  const posts = Array.from({ length: 1205 }, (_, i) => ({ ...article, id: String(i + 1),
+    url: `https://arca.live/b/hotdeal/${i + 1}`, title: i % 2 ? 'SSD 행사' : '생수 행사' }));
+  const { controller, workers } = await fixture(t, async () => { calls++; return posts; });
+  await controller.start();
+  await workers[0].runtime.service.collectNow();
+  const page = await controller.getArticles({ keywords: ['ssd'], limit: 50, offset: 550 });
+  assert.equal(page.source, 'api');
+  assert.equal(page.total, 602);
+  assert.equal(page.allTotal, 1205);
+  assert.equal(page.returnedCount, 50);
+  assert.equal(page.articles[0].id, '104');
+  assert.ok(page.articles.every(({ title }) => title === 'SSD 행사'));
+  assert.equal((await controller.getArticles({ keywords: [] })).total, 0);
+  assert.equal((await controller.getArticles()).total, 1205);
+  assert.equal(calls, 1);
+  await controller.stop();
+  const saved = await controller.getArticles({ keywords: ['SSD'], limit: 50, offset: 550 });
+  assert.equal(saved.source, 'file');
+  assert.deepEqual(saved.articles, page.articles);
+  await assert.rejects(controller.getArticles({ keywords: [''] }));
+});
+
+test('nonmatching new posts advance the watermark so changing interests never replays them as new', async (t) => {
+  let posts = [article];
+  const { controller, workers, path } = await fixture(t, async () => posts);
+  const interests = new InterestSettings(join(path, 'interest-settings.json'));
+  await interests.initialize();
+  await interests.save({ keywords: ['SSD'], notifyOnlyMatches: true });
+  const alerts = [];
+  controller.on('new-articles', (batch) => alerts.push(...interests.filterNotifications(batch)));
+  await controller.start();
+  await workers[0].runtime.service.collectNow();
+  posts = [{ ...article, id: '124', url: 'https://arca.live/b/hotdeal/124', title: '생수' }];
+  await workers[0].runtime.service.collectNow();
+  assert.deepEqual(alerts, []);
+  await interests.save({ keywords: ['생수'], notifyOnlyMatches: true });
+  await workers[0].runtime.service.collectNow();
+  assert.deepEqual(alerts, []);
+  posts = [{ ...article, id: '125', url: 'https://arca.live/b/hotdeal/125', title: '생수' }];
+  await workers[0].runtime.service.collectNow();
+  assert.deepEqual(alerts.map(({ id }) => id), ['125']);
 });

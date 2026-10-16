@@ -1,0 +1,18 @@
+.logs-app{height:100vh;padding:18px;display:flex;flex-direction:column;min-height:0}
+.logs-heading{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:15px;flex-shrink:0}
+.logs-heading h1{display:flex;align-items:center;gap:10px;font-size:18px;margin:0}
+.logs-heading p{font-size:11px;color:var(--muted);margin:6px 0 0}
+.log-tools{display:flex;gap:9px;align-items:center}
+.log-tools select,.log-tools button{font-size:12px;min-height:34px;padding:7px 10px}
+.log-list{flex:1;min-height:0;overflow:auto;background:#101824;border:1px solid var(--border);border-radius:9px 9px 0 0;scrollbar-color:#34465b transparent}
+.log-line{display:grid;grid-template-columns:67px 52px minmax(0,1fr);gap:10px;padding:10px 15px;font-size:12px;border-bottom:1px solid #1a2635;line-height:1.65}
+.log-time{white-space:nowrap;color:#72879f;font-family:Consolas,monospace;font-variant-numeric:tabular-nums}
+.log-level{font-size:10px;font-weight:650;color:#79bcae;padding-top:2px}
+.log-message{color:#c1cdde;overflow-wrap:anywhere;white-space:pre-wrap}
+.log-line.error .log-level,.log-line.error .log-message{color:#ef9fa7}
+.log-line.browser .log-level{color:#9b90bf}
+.log-line.browser .log-message{color:#8e9db4}
+.empty-log{color:var(--muted);font-size:12px;text-align:center;padding:60px 20px}
+.log-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11px;color:var(--muted);padding:12px 14px;border:1px solid var(--border);border-top:0;border-radius:0 0 9px 9px;flex-shrink:0}
+.log-footer label{display:flex;align-items:center;gap:6px;cursor:pointer;color:#b0c1d1}
+.log-footer input{accent-color:var(--accent);margin:0}

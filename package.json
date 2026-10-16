@@ -1,6 +1,6 @@
 {
   "name": "hotdeal-backend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "main": "desktop/main.cjs",
   "description": "Selenium으로 핫딜 게시글을 주기적으로 수집·저장하는 JSON API 서버",
@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "cheerio": "^1.2.0",
+    "electron-updater": "6.8.0",
     "selenium-webdriver": "^4.51.0"
   },
   "devDependencies": {
@@ -27,14 +28,34 @@
   "build": {
     "appId": "com.hotdealcollector.desktop",
     "productName": "핫딜 수집 관리자",
-    "directories": { "output": "release" },
-    "files": ["desktop/**/*", "src/**/*", "package.json", "!node_modules/selenium-webdriver/bin/linux*/**", "!node_modules/selenium-webdriver/bin/macos/**"],
-    "asarUnpack": ["node_modules/selenium-webdriver/bin/windows/**"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**/*",
+      "src/**/*",
+      "package.json",
+      "!node_modules/selenium-webdriver/bin/linux*/**",
+      "!node_modules/selenium-webdriver/bin/macos/**"
+    ],
+    "asarUnpack": [
+      "node_modules/selenium-webdriver/bin/windows/**"
+    ],
     "npmRebuild": false,
     "afterPack": "build/verify-package.cjs",
-    "extraResources": [{ "from": "docs/release-1.0.md", "to": "사용 안내.md" }],
+    "extraResources": [
+      {
+        "from": "docs/release-1.1.md",
+        "to": "사용 안내.md"
+      }
+    ],
     "electronDist": "node_modules/electron/dist",
-    "win": { "target": "nsis", "icon": "desktop/assets/hotdeal.ico", "executableName": "HotdealCollector" },
+    "publish": [{ "provider": "github", "owner": "kim-ximya", "repo": "hotdealBackend", "private": false, "releaseType": "release" }],
+    "win": {
+      "target": "nsis",
+      "icon": "desktop/assets/hotdeal.ico",
+      "executableName": "HotdealCollector"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,

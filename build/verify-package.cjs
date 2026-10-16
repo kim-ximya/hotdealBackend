@@ -17,7 +17,8 @@ module.exports = async ({ appOutDir }) => {
   }
   const manager = path.join(resources, 'app.asar.unpacked', 'node_modules', 'selenium-webdriver', 'bin', 'windows', 'selenium-manager.exe');
   if (!fs.existsSync(manager)) throw new Error('Selenium Manager 실행 파일이 ASAR 밖에 없습니다.');
-  for (const required of ['/desktop/server-worker.js', '/node_modules/selenium-webdriver/NOTICE', '/node_modules/selenium-webdriver/LICENSE',
+  for (const required of ['/desktop/server-worker.js', '/desktop/app-updates.cjs', '/desktop/update-view.js', '/desktop/logs.html',
+    '/node_modules/electron-updater/out/main.js', '/node_modules/selenium-webdriver/NOTICE', '/node_modules/selenium-webdriver/LICENSE',
     '/node_modules/selenium-webdriver/bin/selenium-manager-THIRD-PARTY-NOTICES.txt']) {
     if (!files.includes(required)) throw new Error(`배포 필수 파일 누락: ${required}`);
   }

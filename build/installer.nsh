@@ -1,4 +1,8 @@
 !macro customUnInstall
+  ; Updating keeps the startup entry for the same installation path.
+  ${if} ${isUpdated}
+    Goto hotdeal_startup_done
+  ${endif}
   ; Remove only the startup entry pointing at this installation. Keep dev/other installs.
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "핫딜 수집 관리자"
   StrCmp $0 '$\"$INSTDIR\HotdealCollector.exe$\" hotdeal-windows-startup' 0 hotdeal_startup_done

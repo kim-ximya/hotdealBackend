@@ -24,7 +24,8 @@ function validArticle(article) {
   return article && typeof article === 'object' &&
     typeof article.id === 'string' && /^\d{1,30}$/.test(article.id) &&
     article.url === `${SOURCE_URL}/${article.id}` && typeof article.title === 'string' && article.title.trim() &&
-    (article.author === null || typeof article.author === 'string');
+    (article.author === null || typeof article.author === 'string') &&
+    (article.isNew === undefined || typeof article.isNew === 'boolean');
 }
 
 const newestFirst = (a, b) => BigInt(a.id) === BigInt(b.id) ? 0 : BigInt(a.id) > BigInt(b.id) ? -1 : 1;
@@ -62,12 +63,14 @@ export class ArticleStore {
     }
     const articles = [...new Map(data.articles.map((article) => [article.id, article])).values()]
       .filter((article) => !article.author?.trim().startsWith('*'))
-      .sort(newestFirst).slice(0, this.#maxArticles);
+      .sort(newestFirst).slice(0, this.#maxArticles)
+      .map((article) => ({ ...article, isNew: article.isNew === true }));
     this.#snapshot = { ...this.#snapshot, updatedAt: data.updatedAt, latestCount: data.latestCount, total: articles.length, articles };
   }
 
   async save(collected, collectedAt = new Date().toISOString()) {
     if (!Array.isArray(collected) || !collected.every(validArticle)) throw new Error('수집된 게시글 형식이 올바르지 않습니다.');
+    const previousIds = new Set(this.#snapshot.articles.map(({ id }) => id));
     const merged = new Map(this.#snapshot.articles.map((article) => [article.id, article]));
     const latest = new Map(collected.map((article) => [article.id, article]));
     let addedCount = 0;
@@ -76,10 +79,16 @@ export class ArticleStore {
       const previous = merged.get(article.id);
       if (!previous) addedCount++;
       merged.set(article.id, {
-        ...article, firstSeenAt: previous?.firstSeenAt || collectedAt, lastSeenAt: collectedAt,
+        ...article, isNew: previous?.isNew === true,
+        firstSeenAt: previous?.firstSeenAt || collectedAt, lastSeenAt: collectedAt,
       });
     }
-    const articles = [...merged.values()].sort(newestFirst).slice(0, this.#maxArticles);
+    const retained = [...merged.values()].sort(newestFirst).slice(0, this.#maxArticles);
+    const newIds = new Set(retained.filter(({ id }) => !previousIds.has(id)).map(({ id }) => id));
+    // Keep the latest new batch visible through unchanged collections. Rotate
+    // only when new rows survive retention, and commit flags with their posts.
+    const articles = retained.map((article) => ({ ...article,
+      isNew: newIds.size ? newIds.has(article.id) : article.isNew === true }));
     const snapshot = { ...this.#snapshot, updatedAt: collectedAt,
       latestCount: [...latest.values()].filter((article) => !article.author?.trim().startsWith('*')).length,
       total: articles.length, articles };

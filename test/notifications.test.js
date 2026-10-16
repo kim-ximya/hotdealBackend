@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { NewArticleTracker } from '../desktop/new-article-tracker.js';
 import { loadNotificationSettings, saveNotificationSettings } from '../desktop/notification-settings.js';
 import notifications from '../desktop/floating-notifications.cjs';
+import { createInterestMatcher } from '../src/interests.js';
 
 const article = (id, extra = {}) => ({ id, title: `핫딜 ${id}`, category: '게임', author: '일반 작성자', ...extra });
 
@@ -41,7 +42,7 @@ test('an empty successful baseline still announces subsequent first posts, while
   assert.deepEqual(empty.observe([article('1')]).map(({ id }) => id), ['1']);
 });
 
-function fixture(t) {
+function fixture(t, { filterArticles } = {}) {
   const windows = [];
   class Window extends EventEmitter {
     destroyed = false;
@@ -87,7 +88,7 @@ function fixture(t) {
   const opened = [];
   const manager = new notifications.FloatingNotifications({ BrowserWindow: Window, ipcMain, screen,
     getMainWindow: () => null, showMainWindow: () => opened.push('list'), openArticle: async (id) => opened.push(id),
-    getSettings: () => settings, log: () => {},
+    getSettings: () => settings, log: () => {}, filterArticles,
     setTimer: (callback, ms) => { timers.set(++timerId, { callback, ms }); return timerId; }, clearTimer: (id) => timers.delete(id),
     animationNow: () => animationTime,
     setAnimationTimer: (callback, ms) => { animations.set(++animationId, { callback, at: animationTime + ms }); return animationId; },
@@ -273,4 +274,38 @@ test('shutdown cancels an animation and queued arrivals; display changes restore
   assert.equal(animations.size, 0);
   advance(500);
   assert.equal(windows.length, 1);
+});
+
+test('interest filtering runs before window creation and grouped totals, while previews bypass the filter', async (t) => {
+  let keywords = ['SSD'];
+  const { manager, windows, invoke } = fixture(t, { filterArticles: (posts) => posts.filter(createInterestMatcher(keywords)) });
+  manager.show([article('1', { title: '생수' })]);
+  assert.equal(windows.length, 0);
+  manager.show([article('2', { title: 'SSD 1TB' }), article('3', { title: '생수' }), article('4', { title: 'ssd 2TB' })]);
+  assert.equal(windows.length, 1);
+  windows[0].emit('ready-to-show');
+  const payload = (await invoke('ready')).value;
+  assert.equal(payload.total, 2);
+  assert.deepEqual(payload.articles.map(({ id }) => id), ['4', '2']);
+  manager.dismiss();
+  keywords = [];
+  manager.show([article('5', { title: 'SSD' })]);
+  assert.equal(windows.length, 1);
+  manager.showDemo();
+  assert.equal(windows.length, 2);
+  assert.equal((await invoke('ready')).value.test, true);
+});
+
+test('interests are checked again for queued arrivals after the dismiss animation', async (t) => {
+  let allowed = true;
+  const { manager, windows, invoke, advance } = fixture(t, { filterArticles: (posts) => allowed ? posts : [] });
+  manager.show([article('1')]); windows[0].emit('ready-to-show');
+  await invoke('drag-start', -200);
+  const closing = invoke('drag-end', -80);
+  manager.show([article('2')]);
+  allowed = false;
+  advance(300);
+  await closing;
+  assert.equal(windows.length, 1);
+  assert.equal(windows[0].destroyed, true);
 });

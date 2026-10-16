@@ -11,32 +11,35 @@
 <body>
   <div class="app">
     <header class="header">
-      <div class="brand"><div class="brand-mark" aria-hidden="true">H<span>:</span>D</div><div><h1>핫딜 수집 관리자</h1><p>아카라이브 핫딜 채널 · Selenium</p></div></div>
-      <div class="header-actions"><div class="header-status"><span class="dot" id="status-dot"></span><span id="phase-label">준비 중</span></div><button id="hide-to-tray" type="button" title="서버는 계속 실행됩니다. 트레이 아이콘을 누르면 창을 다시 엽니다.">트레이로 숨기기</button></div>
+      <div class="brand"><div class="brand-mark" aria-hidden="true">H<span>:</span>D</div><div><div class="brand-title"><h1>핫딜 수집 관리자</h1><button id="app-update" class="update-button" type="button" hidden>업데이트</button></div><p id="app-version">버전 확인 중…</p></div></div>
+      <div class="header-actions"><button id="hide-to-tray" type="button" title="서버는 계속 실행됩니다. 트레이 아이콘을 누르면 창을 다시 엽니다.">트레이로 숨기기</button></div>
     </header>
 
     <main>
-      <section class="control-panel" aria-label="서버 제어">
-        <div><div class="eyebrow">COLLECTION SERVER</div><h2 id="headline">저장된 설정을 읽고 있습니다.</h2><p id="subline">잠시 기다려 주세요.</p></div>
-        <div class="actions"><button id="start" class="primary" disabled><span aria-hidden="true">▶</span> 서버 시작</button><button id="stop" disabled>서버 중지</button><button id="collect" disabled><span aria-hidden="true">↻</span> 지금 수집</button></div>
+      <section class="server-panel" aria-label="서버 제어 및 수집 현황">
+        <div class="server-toolbar">
+          <div class="server-message"><div class="server-title"><div class="server-phase"><span class="dot" id="status-dot"></span><span id="phase-label">준비 중</span></div><h2 id="headline">저장된 설정을 읽고 있습니다.</h2></div><p id="subline">잠시 기다려 주세요.</p></div>
+          <div class="actions"><button id="start" class="primary" disabled><span aria-hidden="true">▶</span> 서버 시작</button><button id="stop" disabled>서버 중지</button><button id="collect" disabled><span aria-hidden="true">↻</span> 지금 수집</button></div>
+        </div>
+        <dl class="server-summary" aria-label="수집 현황">
+          <div><dt>보관</dt><dd><strong id="article-count">0</strong><span>개</span></dd></div>
+          <div><dt>최근 수집</dt><dd><span id="last-success" aria-describedby="last-date">기록 없음</span><span id="last-date" class="sr-only">첫 수집을 기다리고 있습니다.</span></dd></div>
+          <div><dt>다음 수집</dt><dd><strong id="next-run" aria-describedby="next-detail">—</strong><span id="next-detail" class="sr-only">서버를 시작하면 예약됩니다.</span></dd></div>
+          <div><dt>브라우저</dt><dd><span id="browser-stage" aria-describedby="run-count">중지됨</span><span id="run-count" class="sr-only">이번 실행 성공 0회 / 시도 0회</span></dd></div>
+        </dl>
       </section>
       <div id="error" class="banner error" role="alert" hidden></div>
+      <div id="update-status" class="banner attention" role="status" hidden></div>
       <div id="attention" class="banner attention" hidden>사이트 보안 확인이 감지되었습니다. 헤드리스 모드에서는 직접 확인할 수 없습니다. 수집 실패 시 마지막 정상 JSON을 유지합니다. 자세한 내용은 로그를 확인하세요.</div>
-
-      <section class="metrics" aria-label="수집 현황">
-        <article class="metric"><div class="metric-label">보관 중인 게시글 <span aria-hidden="true">▤</span></div><div class="metric-value"><strong id="article-count">0</strong><span>개</span></div><p>JSON에 저장된 누적 게시글</p></article>
-        <article class="metric"><div class="metric-label">마지막 수집 성공 <span aria-hidden="true">✓</span></div><div class="metric-value compact" id="last-success">기록 없음</div><p id="last-date">첫 수집을 기다리고 있습니다.</p></article>
-        <article class="metric"><div class="metric-label">다음 수집까지 <span aria-hidden="true">◷</span></div><div class="metric-value"><strong id="next-run">—</strong></div><p id="next-detail">서버를 시작하면 예약됩니다.</p></article>
-        <article class="metric"><div class="metric-label">브라우저 상태 <span aria-hidden="true">▣</span></div><div class="metric-value compact" id="browser-stage">중지됨</div><p id="run-count">이번 실행 성공 0회 / 시도 0회</p></article>
-      </section>
 
       <div class="view-tabs" role="tablist" aria-label="화면 선택">
         <button id="deals-tab" type="button" role="tab" aria-selected="true" aria-controls="deals-view">핫딜 목록 <span id="deals-tab-count" class="tag">0</span></button>
+        <button id="interests-tab" type="button" role="tab" aria-selected="false" aria-controls="interests-view" tabindex="-1">관심 품목 <span id="interests-tab-count" class="tag">0</span></button>
         <button id="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settings-view" tabindex="-1">설정</button>
       </div>
 
       <section id="deals-view" class="deals-panel panel" role="tabpanel" aria-labelledby="deals-tab">
-        <div class="deals-heading"><div><h2>수집한 핫딜 게시글</h2><p id="deals-updated">저장된 목록을 불러오는 중입니다.</p></div><button id="refresh-articles" type="button">목록 새로고침</button></div>
+        <div class="deals-heading"><div class="deals-caption"><h2>수집한 핫딜 게시글</h2><p id="deals-updated">저장된 목록을 불러오는 중입니다.</p></div><div class="deals-tools"><label class="check-setting" title="제목에 등록한 키워드가 포함된 게시글을 표시합니다."><input id="articles-interest-only" type="checkbox" aria-describedby="articles-filter-hint" disabled> 관심 품목만 보기</label><span id="articles-filter-hint" class="sr-only">제목에 등록한 키워드가 포함된 게시글을 표시합니다.</span><button id="refresh-articles" type="button">목록 새로고침</button></div></div>
         <div id="articles-error" class="articles-error" role="alert" hidden></div>
         <div class="table-scroll" id="articles-region" aria-busy="true">
           <div id="articles-empty" class="articles-empty" role="status"><span aria-hidden="true">▤</span><strong>저장된 목록을 불러오고 있습니다.</strong></div>
@@ -49,77 +52,114 @@
         <div class="deals-footer"><span id="articles-summary" role="status">—</span><div class="pagination"><button id="articles-prev" type="button" disabled>이전</button><span id="articles-page">1 / 1</span><button id="articles-next" type="button" disabled>다음</button></div></div>
       </section>
 
-      <section id="settings-view" class="settings-view" role="tabpanel" aria-labelledby="settings-tab" hidden>
-      <div class="workspace">
-        <aside class="settings panel">
-          <div class="panel-heading"><h2>수집 설정</h2><span class="tag">재시작 유지</span></div>
+      <section id="interests-view" class="interests-panel panel" role="tabpanel" aria-labelledby="interests-tab" hidden>
+        <div class="panel-heading"><h2>관심 품목 관리</h2><span id="interest-count" class="tag">0 / 100개</span></div>
+        <p class="help">게시글 제목에 아래 키워드 중 하나라도 포함되면 관심 품목으로 분류합니다. 영문 대소문자는 구분하지 않습니다.</p>
+        <form id="interest-form" class="interest-form">
+          <label for="interest-keyword">관심 품목 키워드</label>
+          <div class="input-row"><input id="interest-keyword" type="text" maxlength="80" required placeholder="예: SSD" aria-describedby="interest-input-help" disabled><button id="interest-add" type="submit" class="primary" disabled>등록</button></div>
+          <p id="interest-input-help" class="help">한 번에 한 품목씩, 최대 80자로 입력하세요. 등록·삭제한 내용은 바로 저장됩니다.</p>
+        </form>
+        <div id="interest-error" class="banner error" role="alert" hidden></div>
+        <ul id="interest-keywords" class="interest-keywords" aria-label="등록한 관심 품목"></ul>
+        <p id="interest-empty" class="help">등록된 관심 품목이 없습니다. 원하는 상품의 키워드를 추가하세요.</p>
+        <div class="divider"></div>
+        <label class="check-setting"><input id="interest-notify-only" type="checkbox" disabled> 등록한 관심 품목의 새 글만 알림</label>
+        <p id="interest-notify-status" class="saved" role="status">관심 품목 설정을 불러오는 중입니다.</p>
+        <p class="help">알림 범위 변경은 즉시 적용됩니다. 전체 알림·소리는 설정 → 알림에서 조정합니다. 테스트 알림은 관심 품목 필터와 관계없이 표시됩니다.</p>
+        <p class="help">핫딜 목록의 <strong>관심 품목만 보기</strong>에서 일치하는 글을 모아 볼 수 있습니다. 수집한 전체 게시글은 계속 저장합니다.</p>
+      </section>
+
+      <section id="settings-view" class="settings-view settings panel" role="tabpanel" aria-labelledby="settings-tab" hidden>
+          <header class="settings-heading"><div><h2>설정</h2><p>수집 방식과 앱 동작을 관리합니다. 변경한 설정은 재시작 후에도 유지됩니다.</p></div><button id="open-logs" type="button">실행 로그 열기 <span aria-hidden="true">↗</span></button></header>
           <div class="settings-tabs" role="tablist" aria-label="설정 종류">
             <button id="collection-tab" type="button" role="tab" aria-selected="true" aria-controls="collection-settings">수집</button>
             <button id="browser-tab" type="button" role="tab" aria-selected="false" aria-controls="browser-settings" tabindex="-1">브라우저</button>
             <button id="notification-tab" type="button" role="tab" aria-selected="false" aria-controls="notification-settings" tabindex="-1">알림</button>
             <button id="startup-tab" type="button" role="tab" aria-selected="false" aria-controls="startup-settings" tabindex="-1">시작</button>
           </div>
-          <div id="collection-settings" role="tabpanel" aria-labelledby="collection-tab">
+          <div class="settings-content">
+          <div id="collection-settings" class="settings-grid" role="tabpanel" aria-labelledby="collection-tab">
+          <article class="setting-card">
+          <div class="setting-card-heading"><h3>수집 간격</h3><span class="tag">재시작 유지</span></div>
+          <p class="setting-description">핫딜 목록을 얼마나 자주 확인할지 설정합니다.</p>
           <form id="interval-form">
             <label for="interval">수집 간격</label>
-            <div class="input-row"><input id="interval" type="number" min="1" max="1440" step="1" value="3" required><select id="unit" aria-label="수집 간격 단위"><option value="60">분</option><option value="1">초</option></select></div>
+            <div class="input-row interval-input"><input id="interval" type="number" min="1" max="1440" step="1" value="3" required><select id="unit" aria-label="수집 간격 단위"><option value="60">분</option><option value="1">초</option></select></div>
             <p class="help">기본 3분 · 1초부터 24시간까지 설정 가능</p>
-            <button id="apply" type="submit" class="wide">간격 적용</button>
+            <button id="apply" type="submit" class="primary">간격 적용</button>
             <p class="saved">현재 적용 <strong id="saved-interval">3분</strong><span id="saved-note">재시작 후에도 유지됩니다.</span></p>
           </form>
-          <div class="divider"></div>
-          <div class="section-label">데이터 저장 위치</div><p class="path" id="data-path">—</p>
-          <button class="text-button" id="open-data">저장 폴더 열기 <span aria-hidden="true">↗</span></button>
-          <div class="divider"></div>
-          <div class="section-label">로컬 API</div><code id="api-url">서버 시작 후 표시됩니다.</code>
+          </article>
+          <article class="setting-card">
+          <div class="setting-card-heading"><h3>데이터 저장 위치</h3><span class="tag">JSON</span></div>
+          <p class="setting-description">수집한 게시글과 서버 설정을 보관합니다.</p>
+          <p class="path" id="data-path">—</p>
+          <button id="open-data" type="button">저장 폴더 열기 <span aria-hidden="true">↗</span></button>
+          <p class="help">수집에 실패해도 마지막 정상 데이터는 유지합니다.</p>
+          </article>
+          <article class="setting-card">
+          <div class="setting-card-heading"><h3>로컬 API</h3><span class="tag">연결 정보</span></div>
+          <p class="setting-description">다른 프론트엔드에서 저장된 게시글을 조회할 수 있습니다.</p>
+          <code class="api-address" id="api-url">서버 시작 후 표시됩니다.</code>
           <p class="help" id="api-detail">저장된 목록: /api/articles</p>
+          <p class="help">목록 조회는 추가 크롤링을 실행하지 않습니다.</p>
+          </article>
           </div>
-          <div id="browser-settings" role="tabpanel" aria-labelledby="browser-tab" hidden>
+          <div id="browser-settings" class="settings-grid" role="tabpanel" aria-labelledby="browser-tab" hidden>
+            <article class="setting-card setting-card-wide">
+            <div class="setting-card-heading"><h3>브라우저 설정</h3><span class="tag">다음 서버 시작 시 적용</span></div>
             <p id="browser-mode" class="browser-mode">Chrome 헤드리스 · 백그라운드 수집</p>
             <form id="user-agent-form">
               <label for="user-agent">User-Agent</label>
               <textarea id="user-agent" rows="5" maxlength="1024" spellcheck="false" placeholder="비워두면 Chrome 기본값 사용" aria-describedby="user-agent-help user-agent-status"></textarea>
               <p id="user-agent-help" class="help">한 줄로 입력하세요. 비워서 저장하면 Chrome 기본값으로 돌아갑니다.</p>
-              <button id="save-user-agent" type="submit" class="wide">User-Agent 저장</button>
+              <button id="save-user-agent" type="submit" class="primary">User-Agent 저장</button>
               <p id="user-agent-status" class="saved" role="status">Chrome 기본값 사용</p>
               <p id="user-agent-restart" class="restart-note" hidden>저장된 설정을 적용하려면 서버를 중지한 뒤 다시 시작하세요.</p>
             </form>
             <div class="divider"></div>
             <p class="help">변경한 값은 다음 서버 시작부터 적용됩니다.</p>
+            </article>
           </div>
-          <div id="notification-settings" role="tabpanel" aria-labelledby="notification-tab" hidden>
+          <div id="notification-settings" class="settings-grid" role="tabpanel" aria-labelledby="notification-tab" hidden>
+            <article class="setting-card">
+            <div class="setting-card-heading"><h3>새 글 알림</h3><span class="tag">즉시 적용</span></div>
+            <p class="setting-description">트레이에 숨긴 상태에서도 새 글을 안내합니다.</p>
             <form id="notification-form">
               <label class="check-setting"><input id="notifications-enabled" type="checkbox" checked disabled> 새 게시글 플로팅 알림</label>
               <label class="check-setting"><input id="notification-sound" type="checkbox" checked disabled> 작은 알림음 함께 재생</label>
               <p class="help">수집 후 새 글을 발견하면 트레이에 숨긴 상태에서도 표시합니다. 여러 글은 한 알림으로 묶습니다.</p>
-              <button id="save-notifications" type="submit" class="wide" disabled>알림 설정 저장</button>
+              <p class="help">관심 품목만 알림을 받으려면 상단의 관심 품목 탭에서 알림 범위를 변경하세요.</p>
+              <button id="save-notifications" type="submit" class="primary" disabled>알림 설정 저장</button>
               <p id="notification-status" class="saved" role="status">알림 설정을 불러오는 중입니다.</p>
             </form>
-            <div class="divider"></div>
-            <button id="test-notification" type="button" class="wide">테스트 알림 표시</button>
+            </article>
+            <article class="setting-card">
+            <div class="setting-card-heading"><h3>알림 미리보기</h3></div>
+            <p class="setting-description">실제 게시글을 수집하지 않고 알림 모양과 소리를 확인합니다.</p>
+            <button id="test-notification" type="button">테스트 알림 표시</button>
             <p class="help">서버 중지 상태에서도 테스트할 수 있습니다. 알림을 꺼도 미리보기는 표시되며, 소리는 저장된 설정을 따릅니다.</p>
             <div class="divider"></div>
             <p class="help">화면 오른쪽 아래에 8초간 표시합니다. 마우스를 올리면 유지하고, 제목을 누르면 원문을 엽니다.</p>
+            </article>
           </div>
-          <div id="startup-settings" role="tabpanel" aria-labelledby="startup-tab" hidden>
+          <div id="startup-settings" class="settings-grid" role="tabpanel" aria-labelledby="startup-tab" hidden>
+            <article class="setting-card">
+            <div class="setting-card-heading"><h3>Windows 자동 실행</h3><span class="tag">로그인 시</span></div>
+            <p class="setting-description">Windows 로그인 시 앱과 수집 서버를 트레이에서 시작합니다.</p>
             <form id="startup-form">
               <label class="check-setting"><input id="startup-enabled" type="checkbox" disabled> Windows 로그인 시 자동 실행</label>
               <p class="help">로그인하면 앱이 트레이에서 시작되고, 수집 서버도 자동으로 실행됩니다.</p>
-              <button id="save-startup" type="submit" class="wide" disabled>자동 실행 설정 적용</button>
+              <button id="save-startup" type="submit" class="primary" disabled>자동 실행 설정 적용</button>
               <p id="startup-status" class="saved" role="status">자동 실행 상태를 불러오는 중입니다.</p>
             </form>
             <div class="divider"></div>
-            <button id="refresh-startup" type="button" class="wide">상태 새로고침</button>
+            <button id="refresh-startup" type="button">상태 새로고침</button>
             <p class="help">자동 실행을 해제해도 현재 실행 중인 서버는 계속 동작합니다.</p>
+            </article>
           </div>
-        </aside>
-
-        <section class="logs panel" aria-label="실행 로그">
-          <div class="panel-heading"><div class="log-title"><h2>실행 로그</h2><span id="log-count" class="tag">0</span></div><div class="log-tools"><select id="log-filter" aria-label="로그 필터"><option value="all">전체</option><option value="error">오류</option><option value="browser">브라우저</option></select><button id="clear-logs" class="text-button">비우기</button></div></div>
-          <div class="log-list" id="log-list" role="log" aria-label="실행 로그 목록" aria-live="off"></div>
-          <div class="log-footer"><label><input id="auto-scroll" type="checkbox" checked> 새 로그 자동 스크롤</label><span>현재 앱 세션 · 최근 500개</span></div>
-        </section>
-      </div>
+          </div>
       </section>
     </main>
     <footer class="footer"><span><span class="tiny-dot"></span> <span id="footer-state">로컬에서 안전하게 보관</span></span><span>닫기·최소화 → 트레이 숨기기 · 완전 종료 → 트레이 메뉴</span></footer>

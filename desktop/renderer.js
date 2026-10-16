@@ -1,13 +1,16 @@
 import { ArticleListView } from './article-list.js';
+import { InterestView } from './interest-view.js';
+import { UpdateView } from './update-view.js';
 
 const $ = (id) => document.getElementById(id);
 const articleList = new ArticleListView(window.hotdeal);
+const updateView = new UpdateView(window.hotdeal, { version: $('app-version'), button: $('app-update'), status: $('update-status') });
+void updateView.initialize();
 let current;
 let busy = false;
 let dirty = false;
 let userAgentDirty = false;
 let toastTimer;
-let logSignature;
 let actionError = null;
 const time = (value) => value ? new Date(value).toLocaleTimeString('en-GB', { hour12: false }) : '기록 없음';
 const date = (value) => value ? new Date(value).toLocaleDateString('ko-KR') : '첫 수집을 기다리고 있습니다.';
@@ -32,28 +35,6 @@ async function action(operation, message) {
   } catch (error) { actionError = error.message; }
   finally { busy = false; if (current) render(current); }
 }
-function renderLogs(snapshot) {
-  const filter = $('log-filter').value;
-  const signature = `${filter}/${snapshot.logs[0]?.id}/${snapshot.logs.at(-1)?.id}/${snapshot.logs.length}`;
-  if (signature === logSignature) return;
-  logSignature = signature;
-  const list = $('log-list');
-  const top = list.scrollTop;
-  const lines = snapshot.logs.filter((log) => filter === 'all' || filter === log.level);
-  const fragment = document.createDocumentFragment();
-  for (const log of lines) {
-    const row = document.createElement('div');
-    row.className = `log-line ${['error', 'browser'].includes(log.level) ? log.level : 'info'}`;
-    for (const [className, value] of [['log-time', time(log.at)], ['log-level', log.level === 'error' ? 'ERROR' : log.level === 'browser' ? 'CHROME' : 'INFO'], ['log-message', log.message]]) {
-      const span = document.createElement('span'); span.className = className; span.textContent = value; row.append(span);
-    }
-    fragment.append(row);
-  }
-  if (!lines.length) { const empty = document.createElement('div'); empty.className = 'empty-log'; empty.textContent = '표시할 로그가 없습니다.'; fragment.append(empty); }
-  list.replaceChildren(fragment);
-  $('log-count').textContent = snapshot.logs.length;
-  list.scrollTop = $('auto-scroll').checked ? list.scrollHeight : top;
-}
 function renderCountdown() {
   const status = current?.status;
   if (status?.isCollecting && current.phase === 'running') {
@@ -63,6 +44,7 @@ function renderCountdown() {
     $('next-run').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
     $('next-detail').textContent = `${time(status.nextRunAt)} 수집 예정`;
   } else { $('next-run').textContent = '—'; $('next-detail').textContent = '서버를 시작하면 예약됩니다.'; }
+  $('next-run').title = $('next-detail').textContent;
 }
 function render(snapshot) {
   current = snapshot;
@@ -73,6 +55,8 @@ function render(snapshot) {
   $('status-dot').className = `dot ${phase}`;
   $('headline').textContent = { stopped: '수집을 시작할 준비가 되었습니다.', starting: '백그라운드 수집 서버를 시작합니다.', stopping: '수집 서버를 안전하게 종료합니다.', running: status?.isCollecting ? '핫딜 게시글을 수집하고 있습니다.' : '다음 핫딜 수집을 기다리고 있습니다.', error: '서버 상태를 확인해 주세요.' }[phase];
   $('subline').textContent = running ? `${intervalText(snapshot.intervalSeconds)}마다 자동 수집 · ${owned ? 'Chrome 헤드리스' : '별도로 실행 중인 서버'}` : phase === 'stopping' ? '진행 중인 작업과 백그라운드 Chrome을 종료합니다.' : 'Chrome 창 없이 수집하고 저장된 JSON을 로컬 API로 제공합니다.';
+  $('headline').title = $('headline').textContent;
+  $('subline').title = $('subline').textContent;
   $('start').disabled = busy || running || transitioning || (phase === 'error' && owned);
   $('stop').disabled = busy || (phase === 'stopped') || transitioning;
   $('stop').textContent = !owned && running ? '연결 해제' : '서버 중지';
@@ -94,8 +78,10 @@ function render(snapshot) {
   $('article-count').textContent = (status?.articleCount || 0).toLocaleString('ko-KR');
   $('last-success').textContent = time(status?.lastSuccessAt);
   $('last-date').textContent = date(status?.lastSuccessAt);
+  $('last-success').title = status?.lastSuccessAt ? `${date(status.lastSuccessAt)} ${time(status.lastSuccessAt)}` : '첫 수집을 기다리고 있습니다.';
   $('browser-stage').textContent = stages[status?.browser?.stage] || '대기 중';
   $('run-count').textContent = `이번 실행 성공 ${status?.successes || 0}회 / 시도 ${status?.attempts || 0}회`;
+  $('browser-stage').title = `${$('browser-stage').textContent} · ${$('run-count').textContent}`;
   $('saved-interval').textContent = intervalText(snapshot.intervalSeconds);
   $('saved-note').textContent = !owned && running ? '외부 서버의 설정에 저장합니다.' : '재시작 후에도 유지됩니다.';
   if (!dirty) {
@@ -112,7 +98,7 @@ function render(snapshot) {
   $('error').textContent = error || '';
   $('attention').hidden = !running || !status?.browser?.attentionRequired;
   $('footer-state').textContent = running ? 'JSON 저장 · 로컬 API 제공 중' : '로컬에서 안전하게 보관';
-  renderCountdown(); renderLogs(snapshot);
+  renderCountdown();
   articleList.sync(snapshot);
 }
 $('start').addEventListener('click', () => action(() => window.hotdeal.start(), '서버를 시작했습니다.'));
@@ -162,8 +148,9 @@ function bindTabs(tabs) {
     });
   }
 }
-bindTabs([['deals-tab', 'deals-view'], ['settings-tab', 'settings-view']]);
-bindTabs([['collection-tab', 'collection-settings'], ['browser-tab', 'browser-settings'], ['notification-tab', 'notification-settings'], ['startup-tab', 'startup-settings']]);
+bindTabs([['deals-tab', 'deals-view'], ['interests-tab', 'interests-view'], ['settings-tab', 'settings-view']]);
+new InterestView(window.hotdeal, { onChange: (settings) => articleList.setInterestSettings(settings), toast });
+bindTabs([...document.querySelectorAll('.settings-tabs [role="tab"]')].map((tab) => [tab.id, tab.getAttribute('aria-controls')]));
 function renderStartupSettings(settings) {
   $('startup-enabled').checked = settings.enabled;
   $('startup-enabled').disabled = !settings.supported;
@@ -221,8 +208,12 @@ $('test-notification').addEventListener('click', async () => {
 });
 window.hotdeal.onShowArticles(() => $('deals-tab').click());
 $('open-data').addEventListener('click', () => action(() => window.hotdeal.openData()));
-$('clear-logs').addEventListener('click', () => action(() => window.hotdeal.clearLogs()));
-$('log-filter').addEventListener('change', () => { if (current) renderLogs(current); });
+$('open-logs').addEventListener('click', async () => {
+  $('open-logs').disabled = true;
+  try { await window.hotdeal.openLogs(); }
+  catch (error) { actionError = error.message; if (current) render(current); }
+  finally { $('open-logs').disabled = false; }
+});
 window.hotdeal.onSnapshot(render);
 window.hotdeal.snapshot().then(render).catch((error) => { $('error').textContent = error.message; $('error').hidden = false; });
 setInterval(renderCountdown, 1000);

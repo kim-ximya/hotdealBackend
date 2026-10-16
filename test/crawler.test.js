@@ -83,6 +83,66 @@ test('JSON store merges by ID, preserves firstSeenAt, sorts newest IDs first and
   assert.deepEqual(await readdir(directory), ['articles.json']);
 });
 
+test('New tags mark the initial batch, persist on unchanged collections and move together when new posts arrive', async (t) => {
+  const directory = await temporary(t);
+  const store = new ArticleStore({ path: join(directory, 'articles.json') });
+  const flagged = () => store.getSnapshot().articles.filter(({ isNew }) => isNew).map(({ id }) => id);
+  await store.save([article('10'), article('9')]);
+  assert.deepEqual(flagged(), ['10', '9']);
+  await store.save([article('10', { views: 99, title: '수정된 원본 제목' })]);
+  assert.deepEqual(flagged(), ['10', '9']);
+  await store.save([article('12'), article('11'), article('10')]);
+  assert.deepEqual(flagged(), ['12', '11']);
+  assert.equal(store.getSnapshot().articles.find(({ id }) => id === '9').isNew, false);
+  await store.save([article('9', { isNew: true }), article('12', { isNew: false })]);
+  assert.deepEqual(flagged(), ['12', '11']);
+  assert.equal(store.getSnapshot().articles[0].title, '핫딜 12');
+});
+
+test('discarded or staff posts never rotate New tags; retention contains only committed new posts', async (t) => {
+  const directory = await temporary(t);
+  const store = new ArticleStore({ path: join(directory, 'articles.json'), maxArticles: 2 });
+  const flagged = () => store.getSnapshot().articles.filter(({ isNew }) => isNew).map(({ id }) => id);
+  await store.save([article('10'), article('9')]);
+  await store.save([article('11')]);
+  assert.deepEqual(flagged(), ['11']);
+  await store.save([article('8'), article('12', { author: '*운영진' })]);
+  assert.deepEqual(flagged(), ['11']);
+  await store.save([article('12'), article('13'), article('14')]);
+  assert.deepEqual(flagged(), ['14', '13']);
+  assert.deepEqual(store.getSnapshot().articles.map(({ id }) => id), ['14', '13']);
+});
+
+test('legacy JSON starts without New tags and new-batch flags survive reload and failed persistence', async (t) => {
+  const directory = await temporary(t);
+  const path = join(directory, 'articles.json');
+  const original = new ArticleStore({ path });
+  await original.save([article('10')]);
+  const legacy = original.getSnapshot();
+  delete legacy.articles[0].isNew;
+  await writeFile(path, JSON.stringify(legacy));
+  let fail = false;
+  const store = new ArticleStore({ path, write: async (...args) => {
+    if (fail) throw new Error('disk full');
+    await atomicWriteJson(...args);
+  } });
+  await store.load();
+  assert.equal(store.getSnapshot().articles[0].isNew, false);
+  await store.save([article('10')]);
+  assert.equal(store.getSnapshot().articles[0].isNew, false);
+  await store.save([article('11')]);
+  const before = store.getSnapshot();
+  const diskBefore = await readFile(path, 'utf8');
+  fail = true;
+  await assert.rejects(store.save([article('12')]), /disk full/);
+  assert.deepEqual(store.getSnapshot(), before);
+  assert.equal(await readFile(path, 'utf8'), diskBefore);
+  const restored = new ArticleStore({ path });
+  await restored.load();
+  assert.deepEqual(restored.getSnapshot(), before);
+  assert.deepEqual(before.articles.filter(({ isNew }) => isNew).map(({ id }) => id), ['11']);
+});
+
 test('retention keeps newest IDs and staff authors are excluded even when updating an existing record', async (t) => {
   const directory = await temporary(t);
   const store = new ArticleStore({ path: join(directory, 'articles.json'), maxArticles: 2 });

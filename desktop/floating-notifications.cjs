@@ -17,9 +17,9 @@ class FloatingNotifications {
   #page = pathToFileURL(path.join(__dirname, 'notification.html')).href;
 
   constructor({ BrowserWindow, ipcMain, screen, getMainWindow, showMainWindow, openArticle,
-    getSettings, log, setTimer = setTimeout, clearTimer = clearTimeout,
+    getSettings, log, filterArticles = (articles) => articles, setTimer = setTimeout, clearTimer = clearTimeout,
     setAnimationTimer = setTimeout, clearAnimationTimer = clearTimeout, animationNow = () => performance.now() }) {
-    this.#deps = { BrowserWindow, ipcMain, screen, getMainWindow, showMainWindow, openArticle, getSettings, log,
+    this.#deps = { BrowserWindow, ipcMain, screen, getMainWindow, showMainWindow, openArticle, getSettings, log, filterArticles,
       setTimer, clearTimer, setAnimationTimer, clearAnimationTimer, animationNow };
     ipcMain.handle('hotdeal-notification:action', async (event, action, value) => {
       if (!this.#window || event.sender !== this.#window.webContents ||
@@ -62,6 +62,7 @@ class FloatingNotifications {
 
   show(articles, { test = false } = {}) {
     const settings = this.#deps.getSettings();
+    if (!test) articles = this.#deps.filterArticles(articles);
     if (this.#disposed || (!test && !settings.enabled) || !articles.length) return;
     // Let the dismissed batch finish leaving. New arrivals get a fresh window
     // instead of being lost when the outgoing window is destroyed.
