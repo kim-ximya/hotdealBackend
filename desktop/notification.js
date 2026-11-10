@@ -1,12 +1,14 @@
+import { notificationApi } from './tauri-bridge.js';
 import { bindNotificationDrag } from './notification-drag.js';
 
-const api = window.hotdealNotification;
+const api = notificationApi;
 const $ = (id) => document.getElementById(id);
 let sequence = 0;
 const fail = (error) => { $('error').textContent = error.message; $('error').hidden = false; };
 function render(payload) {
   if (!payload || payload.sequence <= sequence) return;
   sequence = payload.sequence;
+  document.querySelector('.card').classList.remove('is-leaving');
   $('error').hidden = true;
   $('heading').textContent = payload.test ? '테스트 알림' : `새 핫딜 ${payload.total}개가 도착했습니다`;
   $('summary').textContent = payload.test ? '실제 게시글 수집·저장 없이 미리보기' : '아카라이브 핫딜 · 방금 수집한 새 글';
@@ -41,4 +43,5 @@ document.body.addEventListener('mouseenter', () => api.hover(true).catch(fail));
 document.body.addEventListener('mouseleave', () => api.hover(false).catch(fail));
 bindNotificationDrag(document.querySelector('.card'), api, fail);
 api.onUpdate(render);
+api.onDismiss(() => document.querySelector('.card').classList.add('is-leaving'));
 api.ready().then(render).catch(fail);

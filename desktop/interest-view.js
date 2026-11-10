@@ -1,6 +1,11 @@
-import { interestKey, normalizeKeywords } from '../src/interests.js';
-
 const $ = (id) => document.getElementById(id);
+const interestKey = (value) => value.normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ').trim();
+function normalizeInput(value) {
+  if (/[\u0000-\u001f\u007f]/u.test(value)) throw new Error('관심 품목은 줄바꿈 없는 텍스트로 입력하세요.');
+  const text = value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+  if (!text || text.length > 80) throw new Error('관심 품목은 1~80자로 입력하세요.');
+  return text;
+}
 
 export class InterestView {
   #api;
@@ -16,7 +21,7 @@ export class InterestView {
     $('interest-form').addEventListener('submit', (event) => {
       event.preventDefault();
       void this.#save(() => {
-        const [keyword] = normalizeKeywords([$('interest-keyword').value]);
+        const keyword = normalizeInput($('interest-keyword').value);
         if (this.#settings.keywords.some((value) => interestKey(value) === interestKey(keyword))) throw new Error('이미 등록한 관심 품목입니다.');
         return { ...this.#value(), keywords: [...this.#settings.keywords, keyword] };
       }, '관심 품목을 등록했습니다.', true);

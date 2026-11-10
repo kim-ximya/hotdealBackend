@@ -1,10 +1,11 @@
+import { mainApi } from './tauri-bridge.js';
 import { ArticleListView } from './article-list.js';
 import { InterestView } from './interest-view.js';
 import { UpdateView } from './update-view.js';
 
 const $ = (id) => document.getElementById(id);
-const articleList = new ArticleListView(window.hotdeal);
-const updateView = new UpdateView(window.hotdeal, { version: $('app-version'), button: $('app-update'), status: $('update-status') });
+const articleList = new ArticleListView(mainApi);
+const updateView = new UpdateView(mainApi, { version: $('app-version'), button: $('app-update'), status: $('update-status') });
 void updateView.initialize();
 let current;
 let busy = false;
@@ -47,6 +48,7 @@ function renderCountdown() {
   $('next-run').title = $('next-detail').textContent;
 }
 function render(snapshot) {
+  if (current && snapshot.revision < current.revision) return;
   current = snapshot;
   const { phase, owned, status } = snapshot;
   const running = phase === 'running';
@@ -101,12 +103,12 @@ function render(snapshot) {
   renderCountdown();
   articleList.sync(snapshot);
 }
-$('start').addEventListener('click', () => action(() => window.hotdeal.start(), '서버를 시작했습니다.'));
-$('stop').addEventListener('click', () => action(() => window.hotdeal.stop(), current?.owned ? '서버를 중지했습니다.' : '연결을 해제했습니다.'));
-$('collect').addEventListener('click', () => action(() => window.hotdeal.collect(), '즉시 수집을 요청했습니다.'));
+$('start').addEventListener('click', () => action(() => mainApi.start(), '서버를 시작했습니다.'));
+$('stop').addEventListener('click', () => action(() => mainApi.stop(), current?.owned ? '서버를 중지했습니다.' : '연결을 해제했습니다.'));
+$('collect').addEventListener('click', () => action(() => mainApi.collect(), '즉시 수집을 요청했습니다.'));
 // Hiding the window remains available while a server action is in progress.
 $('hide-to-tray').addEventListener('click', () => {
-  window.hotdeal.hideToTray().catch((error) => {
+  mainApi.hideToTray().catch((error) => {
     actionError = error.message;
     if (current) render(current);
     else { $('error').textContent = actionError; $('error').hidden = false; }
@@ -117,13 +119,13 @@ $('unit').addEventListener('change', () => { dirty = true; $('interval').max = N
 $('interval-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const seconds = Number($('interval').value) * Number($('unit').value);
-  void action(async () => { const snapshot = await window.hotdeal.setInterval(seconds); dirty = false; return snapshot; }, '수집 간격을 저장했습니다.');
+  void action(async () => { const snapshot = await mainApi.setInterval(seconds); dirty = false; return snapshot; }, '수집 간격을 저장했습니다.');
 });
 $('user-agent').addEventListener('input', () => { userAgentDirty = true; });
 $('user-agent-form').addEventListener('submit', (event) => {
   event.preventDefault();
   void action(async () => {
-    const snapshot = await window.hotdeal.setUserAgent($('user-agent').value);
+    const snapshot = await mainApi.setUserAgent($('user-agent').value);
     userAgentDirty = false;
     return snapshot;
   }, 'User-Agent를 저장했습니다. 다음 서버 시작부터 적용됩니다.');
@@ -149,7 +151,7 @@ function bindTabs(tabs) {
   }
 }
 bindTabs([['deals-tab', 'deals-view'], ['interests-tab', 'interests-view'], ['settings-tab', 'settings-view']]);
-new InterestView(window.hotdeal, { onChange: (settings) => articleList.setInterestSettings(settings), toast });
+new InterestView(mainApi, { onChange: (settings) => articleList.setInterestSettings(settings), toast });
 bindTabs([...document.querySelectorAll('.settings-tabs [role="tab"]')].map((tab) => [tab.id, tab.getAttribute('aria-controls')]));
 function renderStartupSettings(settings) {
   $('startup-enabled').checked = settings.enabled;
@@ -161,7 +163,7 @@ function renderStartupSettings(settings) {
 }
 async function refreshStartupSettings() {
   $('refresh-startup').disabled = true;
-  try { renderStartupSettings(await window.hotdeal.startupSettings()); }
+  try { renderStartupSettings(await mainApi.startupSettings()); }
   catch (error) { $('startup-status').textContent = error.message; }
   finally { $('refresh-startup').disabled = false; }
 }
@@ -172,7 +174,7 @@ $('startup-form').addEventListener('submit', async (event) => {
   $('startup-enabled').disabled = true;
   $('save-startup').disabled = true;
   try {
-    renderStartupSettings(await window.hotdeal.setStartupSettings($('startup-enabled').checked));
+    renderStartupSettings(await mainApi.setStartupSettings($('startup-enabled').checked));
     toast('Windows 자동 실행 설정을 적용했습니다.');
   } catch (error) {
     $('startup-status').textContent = error.message;
@@ -186,14 +188,14 @@ function renderNotificationSettings(settings) {
   $('notification-status').textContent = `새 글 알림 ${settings.enabled ? '켜짐' : '꺼짐'} · 소리 ${settings.soundEnabled ? '켜짐' : '꺼짐'}`;
   for (const id of ['notifications-enabled', 'notification-sound', 'save-notifications']) $(id).disabled = false;
 }
-window.hotdeal.notificationSettings().then(renderNotificationSettings).catch((error) => {
+mainApi.notificationSettings().then(renderNotificationSettings).catch((error) => {
   $('notification-status').textContent = `설정을 불러오지 못했습니다: ${error.message}`;
 });
 $('notification-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   $('save-notifications').disabled = true;
   try {
-    renderNotificationSettings(await window.hotdeal.setNotificationSettings({
+    renderNotificationSettings(await mainApi.setNotificationSettings({
       enabled: $('notifications-enabled').checked, soundEnabled: $('notification-sound').checked,
     }));
     toast('알림 설정을 저장했습니다. 바로 적용됩니다.');
@@ -202,18 +204,18 @@ $('notification-form').addEventListener('submit', async (event) => {
 });
 $('test-notification').addEventListener('click', async () => {
   $('test-notification').disabled = true;
-  try { await window.hotdeal.testNotification(); }
+  try { await mainApi.testNotification(); }
   catch (error) { $('notification-status').textContent = error.message; }
   finally { $('test-notification').disabled = false; }
 });
-window.hotdeal.onShowArticles(() => $('deals-tab').click());
-$('open-data').addEventListener('click', () => action(() => window.hotdeal.openData()));
+mainApi.onShowArticles(() => $('deals-tab').click());
+$('open-data').addEventListener('click', () => action(() => mainApi.openData()));
 $('open-logs').addEventListener('click', async () => {
   $('open-logs').disabled = true;
-  try { await window.hotdeal.openLogs(); }
+  try { await mainApi.openLogs(); }
   catch (error) { actionError = error.message; if (current) render(current); }
   finally { $('open-logs').disabled = false; }
 });
-window.hotdeal.onSnapshot(render);
-window.hotdeal.snapshot().then(render).catch((error) => { $('error').textContent = error.message; $('error').hidden = false; });
+mainApi.onSnapshot(render);
+mainApi.snapshot().then(render).catch((error) => { $('error').textContent = error.message; $('error').hidden = false; });
 setInterval(renderCountdown, 1000);

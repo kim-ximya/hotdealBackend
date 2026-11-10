@@ -1,11 +1,16 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-if not exist "node_modules\electron\dist\electron.exe" (
-  echo Electron is not installed. Run npm install first.
-  echo If using pnpm, run pnpm install and pnpm desktop:install.
-  pause
+if exist ".local\tauri-tools\cargo\bin\cargo.exe" (
+  set "CARGO_HOME=%~dp0.local\tauri-tools\cargo"
+  set "RUSTUP_HOME=%~dp0.local\tauri-tools\rustup"
+  set "PATH=%~dp0.local\tauri-tools\cargo\bin;%PATH%"
+)
+if not exist "node_modules\@tauri-apps\cli\tauri.js" (
+  echo Tauri CLI is not installed. Run pnpm install first.
   exit /b 1
 )
-set "ELECTRON_RUN_AS_NODE="
-start "" "%~dp0node_modules\electron\dist\electron.exe" "%~dp0desktop\main.cjs"
+node build\prepare-tauri.cjs
+if errorlevel 1 exit /b %ERRORLEVEL%
+node node_modules\@tauri-apps\cli\tauri.js dev --no-dev-server -- --locked
+exit /b %ERRORLEVEL%

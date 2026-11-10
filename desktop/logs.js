@@ -1,3 +1,4 @@
+import { logsApi } from './tauri-bridge.js';
 const $ = (id) => document.getElementById(id);
 let current = { revision: -1, logs: [] };
 
@@ -30,15 +31,15 @@ function accept(snapshot) {
 }
 function showError(error) { $('logs-error').textContent = error.message; $('logs-error').hidden = false; }
 
-const unsubscribe = window.hotdealLogs.onUpdate(accept);
+const unsubscribe = logsApi.onUpdate(accept);
 window.addEventListener('unload', unsubscribe, { once: true });
-window.hotdealLogs.read().then(accept).catch(showError);
+logsApi.read().then(accept).catch(showError);
 $('log-filter').addEventListener('change', render);
 $('auto-scroll').addEventListener('change', () => { if ($('auto-scroll').checked) $('log-list').scrollTop = $('log-list').scrollHeight; });
 $('clear-logs').addEventListener('click', async () => {
   $('clear-logs').disabled = true;
   $('logs-error').hidden = true;
-  try { accept(await window.hotdealLogs.clear()); }
+  try { accept(await logsApi.clear()); }
   catch (error) { showError(error); }
   finally { $('clear-logs').disabled = false; }
 });

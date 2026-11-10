@@ -1,3 +1,0 @@
-allowBuilds:
-  # Squirrel.Windows is unused; this project builds an NSIS installer.
-  electron-winstaller: false

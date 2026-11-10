@@ -1,12 +1,13 @@
-# 설정 UI 확장
+# Tauri 데스크톱 UI
 
-설정 화면 전체를 하나의 패널로 사용하고, 본문만 스크롤합니다. 상단의 설정 종류와 실행 로그 버튼은 계속 표시됩니다.
+메인, 실행 로그, 플로팅 알림은 각각 `main`, `logs`, `notification` WebView에서 열린다. UI 소스는 `desktop/`, 앱과 수집 백엔드는 `src-tauri/`에 있다.
 
-- `settings-grid`: 창 너비에 따라 카드 열 수를 자동으로 조절합니다.
-- `setting-card`: 기능별 제목·설명·입력·저장 상태를 묶는 기본 카드입니다.
-- `setting-card-wide`: User-Agent처럼 넓은 입력 영역이 필요한 카드입니다.
-- `setting-card-heading`, `setting-description`: 카드의 공통 제목과 안내 스타일입니다.
+- `desktop/tauri-bridge.js`가 Rust 명령과 이벤트를 기존 화면 동작에 연결한다. UI가 파일이나 프로세스를 직접 조작하지 않는다.
+- `src-tauri/src/desktop.rs`가 트레이, 창 생명주기, 별도 로그 창, 명령 검증을 맡는다. 민감한 명령은 호출 창과 앱 내부 URL을 검사한다.
+- `src-tauri/src/desktop/popup.rs`가 투명 알림 창, 묶음, 모니터 위치, 자동 닫기, 우측 드래그 애니메이션을 관리한다.
+- `src-tauri/src/desktop/updates.rs`가 업데이트 확인과 서명 검증 후 설치를 분리한다. 설치 요청 전에는 자체 수집 작업을 종료한다.
+- `src-tauri/src/core.rs`가 앱과 CLI가 공유하는 수집 서비스, 설정, 로그 및 게시글 상태를 관리한다.
 
-기존 카테고리에 기능을 추가할 때 해당 `settings-grid`에 카드를 추가합니다. 새 카테고리는 `.settings-tabs`에 고유 `id`, `role="tab"`, `aria-controls`를 가진 버튼을 추가하고 대응하는 `role="tabpanel"` 영역을 연결합니다. 탭 선택과 방향키 이동은 렌더러에서 자동 연결합니다.
+설정 카드는 `settings-grid` 아래에 `setting-card`를 추가한다. 새 카테고리 탭의 `aria-controls`를 해당 패널 ID에 연결하면 렌더러가 탭 선택과 방향키 이동을 구성한다.
 
-실행 로그는 `LogWindow`가 관리하는 별도 비모달 창입니다. 서버 제어 API를 노출하지 않는 전용 preload와 IPC를 사용합니다. 로그 보관은 서버 컨트롤러가 맡으므로 로그 창을 닫아도 현재 세션의 기록은 남습니다. 같은 창을 중복 생성하지 않으며 앱 종료 시 창·IPC·이벤트 구독을 정리합니다.
+UI에 새 파일을 추가하면 `build/prepare-tauri.cjs`의 번들 파일 목록에도 등록한다. 메인, 로그, 알림 간 새 이벤트는 필요한 창으로만 보내고, 창별 명령의 접근 범위를 함께 검토한다.
