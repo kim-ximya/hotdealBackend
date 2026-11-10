@@ -57,4 +57,4 @@ Windows NSIS 설치 파일은 `src-tauri/target/x86_64-pc-windows-msvc/release/b
 
 서명 없이 빌드한 설치판에서도 수집과 UI를 이용할 수 있습니다. 이후 앱 내 업데이트를 사용하려면 [Tauri 업데이터](https://v2.tauri.app/plugin/updater/) 공개키와 개인키로 서명된 설치판을 먼저 배포해야 합니다. 빌드 시 `TAURI_UPDATER_PUBLIC_KEY`에는 공개키 파일의 내용, `TAURI_SIGNING_PRIVATE_KEY`에는 개인키 내용 또는 경로를 지정합니다. 암호가 있는 경우 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`도 지정합니다. GitHub 정식 릴리즈에는 새 설치 파일, 서명, 해당 파일의 URL·서명을 담은 `latest.json`을 게시합니다. 배포 작업은 빌드 명령이 수행하지 않습니다.
 
-[전환 전 기능 인벤토리](docs/tauri-migration-inventory.md) · [Tauri UI 구조](docs/desktop-ui.md)
+[Tauri UI 구조](docs/desktop-ui.md) · [이전 버전 릴리즈](https://github.com/kim-ximya/hotdealBackend/releases)
