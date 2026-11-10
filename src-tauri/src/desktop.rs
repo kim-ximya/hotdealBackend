@@ -187,6 +187,31 @@ async fn desktop_action(
                 .await
         }
         "resetArticles" => state.core.reset_articles().await,
+        "resetSettings" => {
+            let mut errors = state.core.reset_settings().await?;
+            let startup = match startup::reset() {
+                Ok(settings) => Some(settings),
+                Err(error) => {
+                    errors.push(format!("Windows 자동 실행 초기화 실패: {error}"));
+                    startup::read().ok()
+                }
+            };
+            popup::dismiss(&app);
+            if errors.is_empty() {
+                state.core.log("info", "수집기 저장 설정을 초기화했습니다.");
+            } else {
+                for error in &errors {
+                    state.core.log("error", error);
+                }
+            }
+            Ok(json!({
+                "snapshot": state.core.snapshot(),
+                "interests": state.core.interests(),
+                "notifications": state.core.notifications(),
+                "startup": startup,
+                "errors": errors,
+            }))
+        }
         "articleThumbnail" => {
             use base64::Engine;
             let id = value["id"]

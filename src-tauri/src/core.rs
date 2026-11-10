@@ -3,6 +3,7 @@ use crate::{
     browser::{BrowserStatus, Collector},
     model::{
         self, Article, Articles, Config, Interests, NewArticles, NotificationSettings, CHANNEL,
+        DEFAULT_INTERVAL_SECONDS,
     },
     Result,
 };
@@ -22,6 +23,11 @@ use tokio::{
     time::{sleep, timeout},
 };
 use tokio_util::sync::CancellationToken;
+
+const INTERVAL_SETTINGS: &str = "settings.json";
+const BROWSER_SETTINGS: &str = "browser-settings.json";
+const INTEREST_SETTINGS: &str = "interest-settings.json";
+const NOTIFICATION_SETTINGS: &str = "notification-settings.json";
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -142,18 +148,14 @@ impl Core {
         let articles = articles.unwrap_or_default();
         let ua = ua.unwrap_or_default();
         let status = Status::new(
-            interval.unwrap_or(180),
+            interval.unwrap_or(DEFAULT_INTERVAL_SECONDS),
             &articles,
             BrowserStatus::new(ua.clone(), "closed"),
             false,
         );
-        let interests =
-            model::read_json::<Interests>(&config.user_data.join("interest-settings.json"))
-                .and_then(|value| value.unwrap_or_default().normalize());
+        let interests = load_interests(&config);
         let interest_error = interests.as_ref().err().cloned();
-        let notifications = model::read_json::<NotificationSettings>(
-            &config.user_data.join("notification-settings.json"),
-        );
+        let notifications = load_notifications(&config);
         let notification_error = notifications.as_ref().err().cloned();
         let (events, _) = broadcast::channel(128);
         let core = Self(Arc::new(Shared {
@@ -173,14 +175,10 @@ impl Core {
                 log_revision: 0,
                 interests: interests.unwrap_or_default(),
                 interest_error: interest_error.clone(),
-                notifications: notifications
-                    .unwrap_or_else(|_| {
-                        Some(NotificationSettings {
-                            enabled: false,
-                            sound_enabled: true,
-                        })
-                    })
-                    .unwrap_or_default(),
+                notifications: notifications.unwrap_or_else(|_| NotificationSettings {
+                    enabled: false,
+                    ..NotificationSettings::default()
+                }),
             }),
             running: tokio::sync::Mutex::new(None),
             wake: Notify::new(),
@@ -268,10 +266,7 @@ impl Core {
         let value = value.normalize()?;
         {
             let mut data = self.data();
-            model::write_json(
-                &self.config().user_data.join("interest-settings.json"),
-                &value,
-            )?;
+            model::write_json(&self.config().user_data.join(INTEREST_SETTINGS), &value)?;
             data.interests = value;
             data.interest_error = None;
         }
@@ -292,10 +287,7 @@ impl Core {
     }
     pub fn set_notifications(&self, value: NotificationSettings) -> Result<NotificationSettings> {
         let mut data = self.data();
-        model::write_json(
-            &self.config().user_data.join("notification-settings.json"),
-            &value,
-        )?;
+        model::write_json(&self.config().user_data.join(NOTIFICATION_SETTINGS), &value)?;
         data.notifications = value.clone();
         Ok(value)
     }
@@ -502,6 +494,62 @@ impl Core {
             return Err(message);
         }
         Ok(self.snapshot())
+    }
+
+    pub async fn reset_settings(&self) -> Result<Vec<String>> {
+        let running = self.0.running.lock().await;
+        if running.is_some() {
+            return Err(
+                "수집 서버를 중지하거나 외부 서버 연결을 해제한 뒤 다시 시도하세요.".into(),
+            );
+        }
+        let config = self.config();
+        let _lock = lock_data_directory(config)?;
+        let mut errors = Vec::new();
+        self.update(|data| {
+            for (directory, name, label) in [
+                (&config.directory, INTERVAL_SETTINGS, "수집 간격"),
+                (&config.directory, BROWSER_SETTINGS, "User-Agent"),
+                (&config.user_data, INTEREST_SETTINGS, "관심 품목"),
+                (&config.user_data, NOTIFICATION_SETTINGS, "알림"),
+            ] {
+                if let Err(error) = fs::remove_file(directory.join(name)) {
+                    if error.kind() != std::io::ErrorKind::NotFound {
+                        errors.push(format!("{label} 초기화 실패: {error}"));
+                    }
+                }
+            }
+
+            let interval = load_interval(config);
+            let user_agent = load_user_agent(config);
+            if let Ok(seconds) = &interval {
+                data.status.interval_seconds = *seconds;
+            }
+            if let Ok(value) = &user_agent {
+                data.ua.clone_from(value);
+                data.status.browser = json!(BrowserStatus::new(value.clone(), "closed"));
+            }
+            match load_interests(config) {
+                Ok(value) => {
+                    data.interests = value;
+                    data.interest_error = None;
+                }
+                Err(error) => data.interest_error = Some(error),
+            }
+            if let Ok(value) = load_notifications(config) {
+                data.notifications = value;
+            }
+            if data.phase == "error" {
+                data.error = model::load_articles(&config.directory, config.max_articles)
+                    .err()
+                    .or_else(|| interval.err())
+                    .or_else(|| user_agent.err());
+                if data.error.is_none() {
+                    data.phase = "stopped";
+                }
+            }
+        });
+        Ok(errors)
     }
 
     async fn schedule(
@@ -913,7 +961,7 @@ impl Core {
                 return Err("수집 서버가 종료 중이거나 시작되지 않았습니다.".into());
             }
             model::write_json(
-                &self.config().directory.join("settings.json"),
+                &self.config().directory.join(INTERVAL_SETTINGS),
                 &IntervalSettings {
                     interval_seconds: seconds,
                 },
@@ -952,7 +1000,7 @@ impl Core {
         }
         let value = model::user_agent(value)?;
         model::write_json(
-            &self.config().directory.join("browser-settings.json"),
+            &self.config().directory.join(BROWSER_SETTINGS),
             &BrowserSettings {
                 user_agent: value.clone(),
             },
@@ -989,8 +1037,8 @@ fn load_interval(config: &Config) -> Result<u64> {
     if let Some(seconds) = config.interval_override {
         return Ok(seconds);
     }
-    let seconds = model::read_json::<IntervalSettings>(&config.directory.join("settings.json"))?
-        .map_or(180, |s| s.interval_seconds);
+    let seconds = model::read_json::<IntervalSettings>(&config.directory.join(INTERVAL_SETTINGS))?
+        .map_or(DEFAULT_INTERVAL_SECONDS, |s| s.interval_seconds);
     if !model::valid_interval(seconds) {
         return Err("저장된 수집 간격이 올바르지 않습니다.".into());
     }
@@ -1001,10 +1049,19 @@ fn load_user_agent(config: &Config) -> Result<String> {
     if let Some(value) = &config.ua_override {
         return Ok(value.clone());
     }
-    let value =
-        model::read_json::<BrowserSettings>(&config.directory.join("browser-settings.json"))?
-            .map_or_else(String::new, |s| s.user_agent);
+    let value = model::read_json::<BrowserSettings>(&config.directory.join(BROWSER_SETTINGS))?
+        .map_or_else(String::new, |s| s.user_agent);
     model::user_agent(&value)
+}
+
+fn load_interests(config: &Config) -> Result<Interests> {
+    model::read_json::<Interests>(&config.user_data.join(INTEREST_SETTINGS))?
+        .unwrap_or_default()
+        .normalize()
+}
+
+fn load_notifications(config: &Config) -> Result<NotificationSettings> {
+    Ok(model::read_json(&config.user_data.join(NOTIFICATION_SETTINGS))?.unwrap_or_default())
 }
 
 struct ListView<'a> {

@@ -9,6 +9,15 @@ const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 #[cfg(windows)]
 const APPROVED: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
 
+pub fn reset() -> Result<Value> {
+    let settings = read()?;
+    if settings["registered"] == true {
+        set(false)
+    } else {
+        Ok(settings)
+    }
+}
+
 #[cfg(windows)]
 fn command() -> Result<String> {
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;

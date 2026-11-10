@@ -35,11 +35,20 @@ export class InterestView {
 
   #value() { return { keywords: [...this.#settings.keywords], notifyOnlyMatches: this.#settings.notifyOnlyMatches }; }
 
+  resetSettings(settings) {
+    $('interest-keyword').value = '';
+    this.#apply(settings);
+  }
+
+  #apply(settings) {
+    this.#settings = settings;
+    this.#render();
+    this.#onChange(settings);
+  }
+
   async #initialize() {
     try {
-      this.#settings = await this.#api.interestSettings();
-      this.#render();
-      this.#onChange(this.#settings);
+      this.#apply(await this.#api.interestSettings());
     } catch (error) { this.#showError(`관심 품목 설정을 불러오지 못했습니다: ${error.message}`); }
   }
 
@@ -57,10 +66,8 @@ export class InterestView {
     this.#controls();
     $('interest-error').hidden = true;
     try {
-      this.#settings = await this.#api.setInterestSettings(next());
-      this.#render();
+      this.#apply(await this.#api.setInterestSettings(next()));
       if (clearInput) $('interest-keyword').value = '';
-      this.#onChange(this.#settings);
       this.#toast(message);
     } catch (error) {
       $('interest-notify-only').checked = this.#settings.notifyOnlyMatches;

@@ -1,6 +1,6 @@
 use hotdeal_collector::{
     core::{Core, Event},
-    model::{self, Article, Articles, Config, Interests, NewArticles},
+    model::{self, Article, Articles, Config, Interests, NewArticles, NotificationSettings},
 };
 use serde_json::{json, Value};
 use std::{path::Path, time::Duration};
@@ -366,6 +366,91 @@ async fn article_reset_requires_exclusive_access_and_clears_only_collected_data(
         restored.reset_articles().await.unwrap()["localArticleCount"],
         0
     );
+}
+
+#[tokio::test]
+async fn settings_reset_reuses_first_run_defaults_and_preserves_collected_data() {
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = config(temp.path());
+    seed(&cfg, model::parse_articles(HYBRID).unwrap());
+    let article_path = cfg.directory.join("articles.json");
+    let article_bytes = std::fs::read(&article_path).unwrap();
+    let cache = cfg.directory.join("thumbnails");
+    std::fs::create_dir(&cache).unwrap();
+    let thumbnail = cache.join(format!("185704738-{}.img", "a".repeat(64)));
+    std::fs::write(&thumbnail, b"thumbnail").unwrap();
+
+    let core = Core::new(cfg.clone());
+    core.set_interval(75).await.unwrap();
+    core.set_user_agent("Custom Chrome").await.unwrap();
+    core.set_interests(Interests {
+        keywords: vec!["SSD".into()],
+        notify_only_matches: true,
+    })
+    .unwrap();
+    core.set_notifications(NotificationSettings {
+        enabled: false,
+        sound_enabled: false,
+    })
+    .unwrap();
+
+    core.start(false).await.unwrap();
+    assert!(core
+        .reset_settings()
+        .await
+        .unwrap_err()
+        .contains("수집 서버를 중지"));
+    let other = Core::new(cfg.clone());
+    assert!(other
+        .reset_settings()
+        .await
+        .unwrap_err()
+        .contains("같은 저장 폴더"));
+    assert_eq!(core.snapshot()["intervalSeconds"], 75);
+    assert_eq!(core.interests()["keywords"], json!(["SSD"]));
+    core.stop().await.unwrap();
+
+    assert!(core.reset_settings().await.unwrap().is_empty());
+    for instance in [core, Core::new(cfg)] {
+        assert_eq!(
+            instance.snapshot()["intervalSeconds"],
+            model::DEFAULT_INTERVAL_SECONDS
+        );
+        assert_eq!(instance.snapshot()["userAgent"], "");
+        assert_eq!(
+            instance.interests(),
+            json!({"keywords": [], "notifyOnlyMatches": false, "error": null})
+        );
+        let notifications = instance.notifications();
+        assert!(notifications.enabled && notifications.sound_enabled);
+    }
+    assert_eq!(std::fs::read(&article_path).unwrap(), article_bytes);
+    assert_eq!(std::fs::read(&thumbnail).unwrap(), b"thumbnail");
+}
+
+#[tokio::test]
+async fn settings_reset_reports_file_errors_and_can_be_retried() {
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = config(temp.path());
+    std::fs::create_dir(&cfg.directory).unwrap();
+    std::fs::write(cfg.directory.join("settings.json"), "broken").unwrap();
+    std::fs::write(cfg.user_data.join("interest-settings.json"), "broken").unwrap();
+    let blocked = cfg.user_data.join("notification-settings.json");
+    std::fs::create_dir(&blocked).unwrap();
+    let core = Core::new(cfg);
+    assert_eq!(core.snapshot()["phase"], "error");
+
+    let errors = core.reset_settings().await.unwrap();
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("알림 초기화 실패"));
+    assert!(blocked.is_dir());
+    assert_eq!(core.snapshot()["phase"], "stopped");
+    assert!(core.interests()["error"].is_null());
+    assert!(!core.notifications().enabled);
+
+    std::fs::remove_dir(blocked).unwrap();
+    assert!(core.reset_settings().await.unwrap().is_empty());
+    assert!(core.notifications().enabled);
 }
 
 #[tokio::test]

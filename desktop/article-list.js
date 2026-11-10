@@ -71,8 +71,10 @@ export class ArticleListView {
       this.#category = category.value;
       this.#changeFilters();
     });
-    $('articles-interest-only').addEventListener('change', () => {
-      this.#interestOnly = $('articles-interest-only').checked;
+    const interestOnly = $('articles-interest-only');
+    this.#interestOnly = interestOnly.checked;
+    interestOnly.addEventListener('change', () => {
+      this.#interestOnly = interestOnly.checked;
       this.#changeFilters();
     });
     $('refresh-articles').addEventListener('click', () => { void this.#load(); });
@@ -146,11 +148,28 @@ export class ArticleListView {
     if (changed) this.#changeFilters();
   }
 
+  resetPreferences() {
+    try {
+      localStorage.removeItem(COLUMN_KEY);
+    } finally {
+      this.#columns = DEFAULT_COLUMNS;
+      $('articles-columns').hidden = true;
+      $('articles-columns-toggle').setAttribute('aria-expanded', 'false');
+      const category = $('articles-category');
+      const defaultOption = Array.from(category.options).find((option) => option.defaultSelected) ?? category.options[0];
+      this.#category = category.value = defaultOption.value;
+      const interestOnly = $('articles-interest-only');
+      this.#interestOnly = interestOnly.checked = interestOnly.defaultChecked;
+      this.#changeFilters();
+    }
+  }
+
   #changeFilters() {
     this.#page = 1;
     this.#total = 0;
     this.#hasData = false;
     this.#shownArticles = [];
+    this.#requestedContext = null;
     $('articles-summary').textContent = '';
     this.#empty('목록을 불러오는 중입니다.', '선택한 조건에 맞는 게시글을 확인하고 있습니다.');
     if (this.#snapshot) this.sync(this.#snapshot);

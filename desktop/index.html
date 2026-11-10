@@ -194,6 +194,12 @@
               <button id="reset-articles" type="button" class="danger" aria-describedby="reset-articles-help" disabled>게시글 데이터 초기화</button>
               <p id="reset-articles-help" class="help">수집 서버가 중지된 상태에서 실행할 수 있습니다.</p>
             </article>
+            <article class="setting-card">
+              <div class="setting-card-heading"><h3>핫딜 수집기 설정 초기화</h3></div>
+              <p class="setting-description">수집, 알림, 자동 실행, 관심 품목과 목록 표시 설정을 기본값으로 되돌립니다.</p>
+              <button id="reset-settings" type="button" class="danger" aria-describedby="reset-settings-help" disabled>수집기 설정 초기화</button>
+              <p id="reset-settings-help" class="help">수집 서버가 중지된 상태에서 실행할 수 있습니다.</p>
+            </article>
           </div>
           </div>
       </section>
@@ -201,13 +207,13 @@
     <footer class="footer"><span><span class="tiny-dot"></span> <span id="footer-state">로컬에서 안전하게 보관</span></span><span>닫기·최소화 → 트레이 숨기기 · 완전 종료 → 트레이 메뉴</span></footer>
   </div>
   <div id="toast" role="status" hidden></div>
-  <dialog id="reset-articles-dialog" class="reset-dialog" aria-labelledby="reset-articles-title" aria-describedby="reset-articles-description">
-    <h2 id="reset-articles-title">게시글 데이터를 초기화할까요?</h2>
-    <p id="reset-articles-description">저장된 핫딜 게시글과 썸네일이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
-    <p id="reset-articles-wait" class="help" role="status"></p>
+  <dialog id="reset-dialog" class="reset-dialog" aria-labelledby="reset-title" aria-describedby="reset-description">
+    <h2 id="reset-title"></h2>
+    <p id="reset-description"></p>
+    <p id="reset-wait" class="help" role="status"></p>
     <form method="dialog" class="reset-dialog-actions">
-      <button type="submit" autofocus>취소</button>
-      <button id="confirm-reset-articles" type="button" class="danger" disabled>게시글 데이터 초기화</button>
+      <button id="cancel-reset" type="submit" autofocus>취소</button>
+      <button id="confirm-reset" type="button" class="danger" disabled></button>
     </form>
   </dialog>
 </body>

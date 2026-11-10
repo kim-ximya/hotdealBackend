@@ -16,6 +16,7 @@ use url::Url;
 pub const SOURCE_URL: &str = "https://arca.live/b/hotdeal";
 pub const CHANNEL: &str = "/b/hotdeal";
 pub const MAX_HTML_BYTES: usize = 1024 * 1024;
+pub const DEFAULT_INTERVAL_SECONDS: u64 = 180;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -86,7 +87,12 @@ impl Config {
             wait_seconds: number("SELENIUM_WAIT_SECONDS", 120, 1, 600)?,
             origins,
             interval_override: if cli && env("CRAWL_INTERVAL_SECONDS").is_some() {
-                Some(number("CRAWL_INTERVAL_SECONDS", 180, 1, 86400)?)
+                Some(number(
+                    "CRAWL_INTERVAL_SECONDS",
+                    DEFAULT_INTERVAL_SECONDS,
+                    1,
+                    86400,
+                )?)
             } else {
                 None
             },

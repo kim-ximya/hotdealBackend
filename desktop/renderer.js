@@ -4,9 +4,10 @@ import { InterestView } from './interest-view.js';
 import { UpdateView } from './update-view.js';
 
 const $ = (id) => document.getElementById(id);
-const resetDialog = $('reset-articles-dialog');
-const resetConfirm = $('confirm-reset-articles');
-const resetWait = $('reset-articles-wait');
+const resetDialog = $('reset-dialog');
+const resetConfirm = $('confirm-reset');
+const resetCancel = $('cancel-reset');
+const resetWait = $('reset-wait');
 const articleList = new ArticleListView(mainApi);
 const updateView = new UpdateView(mainApi, { version: $('app-version'), button: $('app-update'), status: $('update-status') });
 void updateView.initialize();
@@ -17,6 +18,8 @@ let userAgentDirty = false;
 let toastTimer;
 let resetTimer;
 let resetAvailableAt = 0;
+let pendingReset;
+let resetting = false;
 let actionError = null;
 const time = (value) => value ? new Date(value).toLocaleTimeString('en-GB', { hour12: false }) : '기록 없음';
 const date = (value) => value ? new Date(value).toLocaleDateString('ko-KR') : '첫 수집을 기다리고 있습니다.';
@@ -41,14 +44,15 @@ async function action(operation, message) {
   } catch (error) { actionError = error.message; }
   finally { busy = false; if (current) render(current); }
 }
-function canResetArticles(snapshot) {
+function canReset(snapshot) {
   return snapshot && !busy && !snapshot.owned && ['stopped', 'error'].includes(snapshot.phase);
 }
 function updateResetConfirmation() {
   const seconds = Math.max(0, Math.ceil((resetAvailableAt - performance.now()) / 1000));
-  resetConfirm.disabled = seconds > 0 || !canResetArticles(current);
-  const message = seconds > 0 ? `${seconds}초 후에 초기화 버튼이 활성화됩니다.`
-    : canResetArticles(current) ? '초기화하려면 아래 버튼을 누르세요.' : '수집 서버를 중지한 뒤 다시 시도하세요.';
+  resetConfirm.disabled = resetting || seconds > 0 || !canReset(current);
+  const message = resetting ? '초기화하는 중입니다.'
+    : seconds > 0 ? `${seconds}초 후에 초기화 버튼이 활성화됩니다.`
+    : canReset(current) ? '초기화하려면 아래 버튼을 누르세요.' : '수집 서버를 중지한 뒤 다시 시도하세요.';
   if (resetWait.textContent !== message) resetWait.textContent = message;
   if (seconds === 0) clearInterval(resetTimer);
 }
@@ -93,7 +97,7 @@ function render(snapshot) {
     : snapshot.userAgent ? '사용자 지정 User-Agent 저장됨' : 'Chrome 기본값 사용';
   $('user-agent-restart').hidden = !needsRestart;
   $('open-data').disabled = busy || (running && !owned);
-  $('reset-articles').disabled = !canResetArticles(snapshot);
+  $('reset-articles').disabled = $('reset-settings').disabled = !canReset(snapshot);
   if (resetDialog.open) updateResetConfirmation();
   $('article-count').textContent = (status?.articleCount || 0).toLocaleString('ko-KR');
   $('last-success').textContent = time(status?.lastSuccessAt);
@@ -124,27 +128,56 @@ function render(snapshot) {
 $('start').addEventListener('click', () => action(() => mainApi.start(), '서버를 시작했습니다.'));
 $('stop').addEventListener('click', () => action(() => mainApi.stop(), current?.owned ? '서버를 중지했습니다.' : '연결을 해제했습니다.'));
 $('collect').addEventListener('click', () => action(() => mainApi.collect(), '즉시 수집을 요청했습니다.'));
-$('reset-articles').addEventListener('click', () => {
-  if (!canResetArticles(current) || resetDialog.open) return;
-  const count = current.localArticleCount;
-  const stored = count > 0 ? ` 앱이 확인한 보관 글은 ${count.toLocaleString('ko-KR')}개입니다.` : '';
-  $('reset-articles-description').textContent = `저장된 게시글과 썸네일이 모두 삭제됩니다.${stored} 이 작업은 되돌릴 수 없습니다.`;
+function showReset({ title, description, label, operation, success }) {
+  if (!canReset(current) || resetDialog.open) return;
+  pendingReset = { operation, success };
+  $('reset-title').textContent = title;
+  $('reset-description').textContent = description;
+  resetConfirm.textContent = label;
   resetConfirm.disabled = true;
   resetDialog.showModal();
   resetAvailableAt = performance.now() + 5000;
   clearInterval(resetTimer);
   resetTimer = setInterval(updateResetConfirmation, 100);
   updateResetConfirmation();
+}
+$('reset-articles').addEventListener('click', () => {
+  const count = current?.localArticleCount;
+  const stored = count > 0 ? ` 앱이 확인한 보관 글은 ${count.toLocaleString('ko-KR')}개입니다.` : '';
+  showReset({
+    title: '게시글 데이터를 초기화할까요?',
+    description: `저장된 게시글과 썸네일이 모두 삭제됩니다.${stored} 이 작업은 되돌릴 수 없습니다.`,
+    label: '게시글 데이터 초기화',
+    operation: () => mainApi.resetArticles(),
+    success: '저장된 게시글과 썸네일을 초기화했습니다.',
+  });
+});
+$('reset-settings').addEventListener('click', () => {
+  showReset({
+    title: '수집기 설정을 초기화할까요?',
+    description: '수집 간격, User-Agent, 알림, Windows 자동 실행과 목록 표시 설정을 기본값으로 되돌립니다. 등록한 관심 품목도 삭제됩니다.',
+    label: '수집기 설정 초기화',
+    operation: resetSettings,
+    success: '수집기 설정을 기본값으로 되돌렸습니다.',
+  });
 });
 resetDialog.addEventListener('close', () => {
   if (resetDialog.open) return;
   clearInterval(resetTimer);
   resetConfirm.disabled = true;
+  pendingReset = null;
 });
-resetConfirm.addEventListener('click', () => {
-  if (!resetDialog.open || performance.now() < resetAvailableAt || !canResetArticles(current)) return;
-  resetDialog.close();
-  void action(() => mainApi.resetArticles(), '저장된 게시글과 썸네일을 초기화했습니다.');
+resetDialog.addEventListener('cancel', (event) => { if (resetting) event.preventDefault(); });
+resetConfirm.addEventListener('click', async () => {
+  if (!resetDialog.open || resetConfirm.disabled || performance.now() < resetAvailableAt || !canReset(current)) return;
+  resetting = true;
+  resetCancel.disabled = true;
+  try { await action(pendingReset.operation, pendingReset.success); }
+  finally {
+    resetting = false;
+    resetCancel.disabled = false;
+    resetDialog.close();
+  }
 });
 // Hiding the window remains available while a server action is in progress.
 $('hide-to-tray').addEventListener('click', () => {
@@ -191,8 +224,23 @@ function bindTabs(tabs) {
   }
 }
 bindTabs([['deals-tab', 'deals-view'], ['interests-tab', 'interests-view'], ['settings-tab', 'settings-view']]);
-new InterestView(mainApi, { onChange: (settings) => articleList.setInterestSettings(settings), toast });
+const interestView = new InterestView(mainApi, { onChange: (settings) => articleList.setInterestSettings(settings), toast });
 bindTabs([...document.querySelectorAll('.settings-tabs [role="tab"]')].map((tab) => [tab.id, tab.getAttribute('aria-controls')]));
+async function resetSettings() {
+  const { snapshot, interests, notifications, startup, errors } = await mainApi.resetSettings();
+  dirty = false;
+  userAgentDirty = false;
+  try { articleList.resetPreferences(); }
+  catch { errors.push('목록 표시 항목을 저장소에서 지우지 못했습니다.'); }
+  interestView.resetSettings(interests);
+  renderNotificationSettings(notifications);
+  if (startup) renderStartupSettings(startup);
+  if (errors.length) {
+    render(snapshot);
+    throw new Error(`일부 설정을 초기화하지 못했습니다. ${errors.join(' ')}`);
+  }
+  return snapshot;
+}
 function renderStartupSettings(settings) {
   $('startup-enabled').checked = settings.enabled;
   $('startup-enabled').disabled = !settings.supported;

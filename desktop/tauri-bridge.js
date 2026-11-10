@@ -10,6 +10,12 @@ const subscribe = (name, callback) => {
 };
 const action = (name, value) => call('desktop_action', { name, value });
 const notification = (name, value) => call('notification_action', { name, value });
+let pendingSettings = Promise.resolve();
+const settingsAction = (name, value) => {
+  const result = pendingSettings.then(() => action(name, value));
+  pendingSettings = result.catch(() => {});
+  return result;
+};
 
 export const mainApi = {
   snapshot: () => action('snapshot'), start: () => action('start'), stop: () => action('stop'),
@@ -17,16 +23,17 @@ export const mainApi = {
   setUserAgent: (value) => action('userAgent', value), articles: (value) => action('articles', value),
   articleThumbnail: (id, source) => action('articleThumbnail', { id, source }),
   resetArticles: () => action('resetArticles'),
+  resetSettings: () => settingsAction('resetSettings'),
   openArticle: (id) => action('openArticle', id), openLogs: () => action('openLogs'),
   openData: () => action('openData'), hideToTray: () => action('hideToTray'),
   updateState: () => action('updateState'), downloadUpdate: () => action('downloadUpdate'),
   installUpdate: () => action('installUpdate'), onUpdate: (fn) => subscribe('hotdeal:update', fn),
-  notificationSettings: () => action('notificationSettings'),
-  setNotificationSettings: (value) => action('setNotificationSettings', value),
+  notificationSettings: () => settingsAction('notificationSettings'),
+  setNotificationSettings: (value) => settingsAction('setNotificationSettings', value),
   testNotification: () => action('testNotification'),
-  interestSettings: () => action('interestSettings'),
-  setInterestSettings: (value) => action('setInterestSettings', value),
-  startupSettings: () => action('startupSettings'), setStartupSettings: (value) => action('setStartupSettings', value),
+  interestSettings: () => settingsAction('interestSettings'),
+  setInterestSettings: (value) => settingsAction('setInterestSettings', value),
+  startupSettings: () => settingsAction('startupSettings'), setStartupSettings: (value) => settingsAction('setStartupSettings', value),
   onShowArticles: (fn) => subscribe('hotdeal:showArticles', fn),
   onSnapshot: (fn) => subscribe('hotdeal:snapshot', fn),
 };
