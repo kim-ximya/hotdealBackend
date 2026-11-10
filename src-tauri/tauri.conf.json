@@ -11,7 +11,7 @@
         "minWidth": 940, "minHeight": 740, "visible": false, "backgroundColor": "#0c111b" }
     ],
     "security": {
-      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'; frame-src 'none'"
+      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'; frame-src 'none'"
     }
   },
   "plugins": { "updater": { "pubkey": "", "endpoints": [] } },

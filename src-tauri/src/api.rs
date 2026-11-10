@@ -61,11 +61,16 @@ async fn handle(State(api): State<Api>, request: Request) -> Response {
 
 async fn dispatch(core: &Core, request: Request) -> Response {
     let path = request.uri().path();
+    let thumbnail_id = path
+        .strip_prefix("/api/articles/")
+        .and_then(|path| path.strip_suffix("/thumbnail"))
+        .filter(|id| crate::model::valid_id(id));
     if request.method() == Method::OPTIONS
-        && matches!(
-            path,
-            "/api/articles" | "/api/status" | "/api/settings" | "/api/collect"
-        )
+        && (thumbnail_id.is_some()
+            || matches!(
+                path,
+                "/api/articles" | "/api/status" | "/api/settings" | "/api/collect"
+            ))
     {
         return (
             StatusCode::NO_CONTENT,
@@ -78,6 +83,14 @@ async fn dispatch(core: &Core, request: Request) -> Response {
             ],
         )
             .into_response();
+    }
+    if let Some(id) = thumbnail_id.filter(|_| request.method() == Method::GET) {
+        return match core.api_thumbnail(id) {
+            Some(image) => {
+                ([(header::CONTENT_TYPE, image.media_type)], image.bytes).into_response()
+            }
+            None => error(StatusCode::NOT_FOUND, "저장된 썸네일이 없습니다."),
+        };
     }
     match (request.method(), path) {
         (&Method::GET, "/") => axum::response::Html(r#"<!doctype html><html lang="ko"><meta charset="utf-8">

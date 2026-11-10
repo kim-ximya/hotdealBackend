@@ -2,6 +2,7 @@ pub mod api;
 pub mod browser;
 pub mod core;
 pub mod model;
+mod thumbnails;
 
 #[cfg(feature = "desktop")]
 pub mod desktop;

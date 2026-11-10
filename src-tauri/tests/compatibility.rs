@@ -66,6 +66,63 @@ fn desktop_and_hybrid_html_match_the_electron_fixtures() {
     assert_eq!(deals[0].title, "하우스 플리퍼 2");
     assert_eq!(deals[0].author.as_deref(), Some("세리키누스_몬텔라"));
     assert_eq!(deals[0].views, Some(23));
+    assert_eq!(deals[0].price.as_deref(), Some("21,000원"));
+    assert_eq!(deals[0].store.as_deref(), Some("스팀"));
+    assert_eq!(deals[0].shipping.as_deref(), Some("무료"));
+    assert_eq!(
+        deals[0].thumbnail_url.as_deref(),
+        Some("https://arca.live/example-preview.png")
+    );
+    assert!(rows[0].price.is_none());
+    assert!(rows[0].thumbnail_url.is_none());
+}
+
+#[tokio::test]
+async fn deal_metadata_survives_storage_and_is_exposed_by_the_api() {
+    use sha2::{Digest, Sha256};
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = config(temp.path());
+    seed(&cfg, model::parse_articles(HYBRID).unwrap());
+    let cache = cfg.directory.join("thumbnails");
+    std::fs::create_dir(&cache).unwrap();
+    let file = format!(
+        "185704738-{:x}.img",
+        Sha256::digest("arca.live/example-preview.png")
+    );
+    let bytes = [0xff, 0xd8, 0xff, 0xd9];
+    std::fs::write(cache.join(file), bytes).unwrap();
+
+    let core = Core::new(cfg);
+    let saved = core.list(10, 0, false, None).await.unwrap();
+    assert_eq!(saved["articles"][0]["store"], "스팀");
+    let snapshot = core.start(false).await.unwrap();
+    let base = snapshot["baseUrl"].as_str().unwrap();
+    let data: Value = reqwest::get(format!("{base}/api/articles?limit=1"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(data["articles"][0]["price"], "21,000원");
+    assert_eq!(data["articles"][0]["shipping"], "무료");
+    assert_eq!(
+        data["articles"][0]["thumbnailUrl"],
+        "https://arca.live/example-preview.png"
+    );
+    let thumbnail = reqwest::get(format!("{base}/api/articles/185704738/thumbnail"))
+        .await
+        .unwrap();
+    assert_eq!(thumbnail.status(), 200);
+    assert_eq!(thumbnail.headers()["content-type"], "image/jpeg");
+    assert_eq!(&thumbnail.bytes().await.unwrap()[..], &bytes);
+    assert_eq!(
+        reqwest::get(format!("{base}/api/articles/100/thumbnail"))
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+    core.stop().await.unwrap();
 }
 
 #[test]
@@ -173,7 +230,7 @@ async fn settings_and_interest_pagination_survive_restart_without_a_crawl() {
     let restored = Core::new(cfg);
     assert_eq!(restored.snapshot()["intervalSeconds"], 42);
     assert_eq!(restored.snapshot()["userAgent"], "Chrome test");
-    let page = restored.list(1, 0, true).await.unwrap();
+    let page = restored.list(1, 0, true, None).await.unwrap();
     assert_eq!(page["articles"][0]["id"], "299");
     assert_eq!(page["allTotal"], 4);
     assert_eq!(page["total"], 1);
@@ -187,6 +244,64 @@ async fn settings_and_interest_pagination_survive_restart_without_a_crawl() {
 }
 
 #[tokio::test]
+async fn desktop_category_and_interest_filters_run_before_pagination() {
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = config(temp.path());
+    let fixture = model::parse_articles(LIST).unwrap();
+    let mut rows = Vec::new();
+    for (id, category, title) in [
+        ("500", Some(" 바이럴 "), "SSD 광고"),
+        ("499", Some("전자제품"), "SSD 케이스"),
+        ("498", Some("PC/하드웨어"), "SSD 2TB"),
+        ("497", Some("PC/하드웨어"), "메모리"),
+        ("496", None, "기존 게시글"),
+    ] {
+        let mut row = with_id(&fixture[1], id);
+        row.category = category.map(str::to_owned);
+        row.title = title.into();
+        rows.push(row);
+    }
+    seed(&cfg, rows);
+    let core = Core::new(cfg.clone());
+    core.set_interests(Interests {
+        keywords: vec!["SSD".into()],
+        notify_only_matches: false,
+    })
+    .unwrap();
+
+    for source in ["file", "api"] {
+        if source == "api" {
+            core.start(false).await.unwrap();
+        }
+        let all = core.list(10, 0, false, None).await.unwrap();
+        assert_eq!(all["source"], source);
+        assert_eq!(all["total"], 4);
+        assert_eq!(all["articles"][0]["id"], "499");
+        assert_eq!(all["articles"][3]["id"], "496");
+
+        let category = core.list(1, 1, false, Some("PC/하드웨어")).await.unwrap();
+        assert_eq!(category["total"], 2);
+        assert_eq!(category["allTotal"], 4);
+        assert_eq!(category["articles"][0]["id"], "497");
+
+        let both = core.list(10, 0, true, Some("PC/하드웨어")).await.unwrap();
+        assert_eq!(both["total"], 1);
+        assert_eq!(both["articles"][0]["id"], "498");
+        assert_eq!(
+            core.list(10, 0, false, Some("바이럴")).await.unwrap()["total"],
+            0
+        );
+    }
+    core.stop().await.unwrap();
+    assert_eq!(
+        model::load_articles(&cfg.directory, cfg.max_articles)
+            .unwrap()
+            .total,
+        5
+    );
+}
+
+#[tokio::test]
 async fn corrupt_state_is_not_overwritten_by_startup() {
     let temp = tempfile::tempdir().unwrap();
     let cfg = config(temp.path());
@@ -196,7 +311,7 @@ async fn corrupt_state_is_not_overwritten_by_startup() {
     let core = Core::new(cfg);
     assert_eq!(core.snapshot()["phase"], "error");
     assert!(core.start(false).await.is_err());
-    assert!(core.list(1, 0, false).await.is_err());
+    assert!(core.list(1, 0, false, None).await.is_err());
     assert_eq!(std::fs::read_to_string(path).unwrap(), "broken");
 }
 
@@ -329,7 +444,11 @@ async fn api_preserves_pagination_mutations_validation_and_shutdown() {
 async fn attaching_to_a_compatible_external_api_does_not_stop_it_or_change_its_ua() {
     let temp = tempfile::tempdir().unwrap();
     let cfg = config(temp.path());
-    seed(&cfg, model::parse_articles(LIST).unwrap());
+    let mut rows = model::parse_articles(LIST).unwrap();
+    let mut viral = with_id(&rows[1], "400");
+    viral.category = Some("바이럴".into());
+    rows.push(viral);
+    seed(&cfg, rows);
     let server = Core::new(cfg.clone());
     let owned = server.start(false).await.unwrap();
     let mut other = cfg;
@@ -342,12 +461,15 @@ async fn attaching_to_a_compatible_external_api_does_not_stop_it_or_change_its_u
     let external = client.start(true).await.unwrap();
     assert_eq!(external["owned"], false);
     assert!(client.set_user_agent("new value").await.is_err());
-    assert_eq!(client.list(1, 0, false).await.unwrap()["total"], 4);
+    assert_eq!(client.list(1, 0, false, None).await.unwrap()["total"], 4);
+    let category = client.list(1, 0, false, Some("식품")).await.unwrap();
+    assert_eq!(category["articles"][0]["id"], "299");
     client.set_interval(67).await.unwrap();
     assert_eq!(server.status().interval_seconds, 67);
     client.stop().await.unwrap();
     assert!(server.status().running);
-    assert_eq!(server.list(1, 0, false).await.unwrap()["total"], 4);
+    assert_eq!(server.list(1, 0, false, None).await.unwrap()["total"], 4);
+    assert_eq!(server.api_articles(1, 0)["total"], 5);
     server.stop().await.unwrap();
 }
 
@@ -408,6 +530,16 @@ async fn live_collection_writes_json_and_stops_its_browser() {
     );
     let articles = model::load_articles(&data, 10000).unwrap();
     assert!(articles.total > 0);
+    let fields = articles
+        .articles
+        .iter()
+        .filter(|row| row.price.is_some() && row.store.is_some() && row.shipping.is_some())
+        .count();
+    let cached = std::fs::read_dir(data.join("thumbnails"))
+        .map(|entries| entries.flatten().count())
+        .unwrap_or(0);
+    println!("deal fields: {fields}; cached thumbnails: {cached}");
+    assert!(fields > 0 && cached > 0);
     println!(
         "stored {} posts; browser and local API stopped",
         articles.total

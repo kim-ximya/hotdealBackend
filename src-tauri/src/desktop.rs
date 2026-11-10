@@ -125,6 +125,7 @@ struct Query {
     limit: usize,
     offset: usize,
     interest_only: bool,
+    category: Option<String>,
 }
 impl Default for Query {
     fn default() -> Self {
@@ -132,6 +133,7 @@ impl Default for Query {
             limit: 50,
             offset: 0,
             interest_only: false,
+            category: None,
         }
     }
 }
@@ -176,8 +178,33 @@ async fn desktop_action(
             };
             state
                 .core
-                .list(query.limit, query.offset, query.interest_only)
+                .list(
+                    query.limit,
+                    query.offset,
+                    query.interest_only,
+                    query.category.as_deref(),
+                )
                 .await
+        }
+        "articleThumbnail" => {
+            use base64::Engine;
+            let id = value["id"]
+                .as_str()
+                .ok_or("게시글 ID가 올바르지 않습니다.")?;
+            let source = value["source"]
+                .as_str()
+                .ok_or("썸네일 주소가 올바르지 않습니다.")?;
+            Ok(state
+                .core
+                .list_thumbnail(id, source)
+                .await
+                .map_or(Value::Null, |image| {
+                    json!(format!(
+                        "data:{};base64,{}",
+                        image.media_type,
+                        base64::engine::general_purpose::STANDARD.encode(image.bytes)
+                    ))
+                }))
         }
         "openArticle" => {
             open_article(

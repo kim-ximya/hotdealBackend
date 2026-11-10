@@ -1,4 +1,30 @@
 const PAGE_SIZE = 50;
+const COLUMN_KEY = 'hotdeal.articleColumns.v1';
+const COLUMNS = [
+  ['thumbnailUrl', '썸네일'], ['title', '제목'], ['category', '분류'], ['price', '가격'],
+  ['store', '쇼핑몰'], ['shipping', '배송비'], ['author', '작성자'], ['createdAt', '작성일'],
+  ['views', '조회'], ['recommendations', '추천'], ['commentCount', '댓글'], ['isNew', '새 글 태그'],
+  ['id', '게시글 ID'], ['url', '원문 주소'], ['isNotice', '공지 여부'],
+  ['firstSeenAt', '최초 수집'], ['lastSeenAt', '최근 수집'],
+];
+const DEFAULT_COLUMNS = ['title', 'category', 'price', 'store', 'shipping', 'author', 'createdAt', 'views', 'recommendations', 'commentCount', 'isNew'];
+const COUNTS = new Set(['views', 'recommendations', 'commentCount']);
+const DATES = new Set(['createdAt', 'firstSeenAt', 'lastSeenAt']);
+const columnOrder = (keys) => COLUMNS.filter(([key]) => keys.includes(key));
+export function visibleColumns(keys) {
+  const requested = columnOrder(Array.isArray(keys) ? keys : []);
+  const selected = requested.length ? requested : columnOrder(DEFAULT_COLUMNS);
+  // Keep New beside the title when both are selected; it can also be shown on its own.
+  return selected.filter(([key]) => key !== 'isNew' || !selected.some(([field]) => field === 'title'));
+}
+function readColumns() {
+  try {
+    const value = JSON.parse(localStorage.getItem(COLUMN_KEY));
+    const selected = columnOrder(Array.isArray(value) ? value : []);
+    if (selected.length) return selected.map(([key]) => key);
+  } catch {}
+  return DEFAULT_COLUMNS;
+}
 const $ = (id) => document.getElementById(id);
 const number = (value) => Number.isFinite(value) ? value.toLocaleString('ko-KR') : '—';
 const timestamp = (value) => {
@@ -22,18 +48,85 @@ export class ArticleListView {
   #hasData = false;
   #snapshot = null;
   #interestOnly = false;
+  #category = '';
   #keywords = [];
+  #columns = readColumns();
+  #shownArticles = [];
+  #thumbnailJobs = new WeakMap();
+  #observer;
 
   constructor(api) {
     this.#api = api;
+    this.#observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        this.#observer.unobserve(entry.target);
+        void this.#loadThumbnail(entry.target);
+      }
+    }, { root: $('articles-region'), rootMargin: '120px' });
+    this.#initializeColumns();
+    const category = $('articles-category');
+    this.#category = category.value;
+    category.addEventListener('change', () => {
+      this.#category = category.value;
+      this.#changeFilters();
+    });
     $('articles-interest-only').addEventListener('change', () => {
       this.#interestOnly = $('articles-interest-only').checked;
-      this.#page = 1;
-      if (this.#snapshot) this.sync(this.#snapshot);
+      this.#changeFilters();
     });
     $('refresh-articles').addEventListener('click', () => { void this.#load(); });
     $('articles-prev').addEventListener('click', () => { if (this.#page > 1 && !this.#loading) { this.#page--; void this.#load(); } });
     $('articles-next').addEventListener('click', () => { if (this.#page * PAGE_SIZE < this.#total && !this.#loading) { this.#page++; void this.#load(); } });
+  }
+
+  #initializeColumns() {
+    const form = $('articles-columns');
+    const toggle = $('articles-columns-toggle');
+    const status = $('articles-columns-status');
+    const checkboxes = new Map();
+    for (const [key, name] of COLUMNS) {
+      const label = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      checkboxes.set(key, input);
+      label.append(input, name);
+      $('articles-column-options').append(label);
+    }
+    const check = (keys) => {
+      for (const [key, input] of checkboxes) input.checked = keys.includes(key);
+      status.textContent = '한 개 이상의 항목을 선택하세요.';
+    };
+    const show = (open) => {
+      form.hidden = !open;
+      toggle.setAttribute('aria-expanded', String(open));
+    };
+    toggle.addEventListener('click', () => {
+      if (form.hidden) { check(this.#columns); show(true); }
+      else show(false);
+    });
+    form.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      show(false);
+      toggle.focus();
+    });
+    $('articles-columns-all').addEventListener('click', () => check(COLUMNS.map(([key]) => key)));
+    $('articles-columns-none').addEventListener('click', () => check([]));
+    $('articles-columns-default').addEventListener('click', () => check(DEFAULT_COLUMNS));
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const columns = [...checkboxes].filter(([, input]) => input.checked).map(([key]) => key);
+      if (!columns.length) { status.textContent = '표시할 항목을 한 개 이상 선택하세요.'; return; }
+      this.#columns = columns;
+      this.#renderRows();
+      try {
+        localStorage.setItem(COLUMN_KEY, JSON.stringify(columns));
+        show(false);
+        toggle.focus();
+      } catch {
+        status.textContent = '표시 항목을 저장하지 못했습니다. 이번 실행에만 적용됩니다.';
+      }
+    });
   }
 
   sync(snapshot) {
@@ -41,14 +134,25 @@ export class ArticleListView {
     const source = snapshot.phase === 'running' ? snapshot.baseUrl : `file:${snapshot.dataDirectory}`;
     if (source !== this.#source) this.#page = 1;
     this.#source = source;
-    this.#context = `${source}/${snapshot.status?.lastSuccessAt}/${snapshot.status?.articleCount}/${this.#interestOnly ? JSON.stringify(this.#keywords) : 'all'}`;
+    this.#context = JSON.stringify([source, snapshot.status?.lastSuccessAt, snapshot.status?.articleCount,
+      this.#category, this.#interestOnly ? this.#keywords : null]);
     if (this.#context !== this.#requestedContext) void this.#load();
   }
 
   setInterestSettings(settings) {
-    if (this.#interestOnly && JSON.stringify(settings.keywords) !== JSON.stringify(this.#keywords)) this.#page = 1;
+    const changed = this.#interestOnly && JSON.stringify(settings.keywords) !== JSON.stringify(this.#keywords);
     this.#keywords = [...settings.keywords];
     $('articles-interest-only').disabled = false;
+    if (changed) this.#changeFilters();
+  }
+
+  #changeFilters() {
+    this.#page = 1;
+    this.#total = 0;
+    this.#hasData = false;
+    this.#shownArticles = [];
+    $('articles-summary').textContent = '';
+    this.#empty('목록을 불러오는 중입니다.', '선택한 조건에 맞는 게시글을 확인하고 있습니다.');
     if (this.#snapshot) this.sync(this.#snapshot);
   }
 
@@ -69,7 +173,8 @@ export class ArticleListView {
     $('articles-error').hidden = true;
     this.#controls();
     try {
-      const snapshot = await this.#api.articles({ limit: PAGE_SIZE, offset: (this.#page - 1) * PAGE_SIZE, interestOnly: this.#interestOnly });
+      const snapshot = await this.#api.articles({ limit: PAGE_SIZE, offset: (this.#page - 1) * PAGE_SIZE,
+        interestOnly: this.#interestOnly, category: this.#category || null });
       if (request !== this.#request) return;
       if (context !== this.#context) return;
       if (!snapshot || !Array.isArray(snapshot.articles) || !Number.isSafeInteger(snapshot.total) || snapshot.total < 0) throw new Error('게시글 목록 응답이 올바르지 않습니다.');
@@ -104,37 +209,115 @@ export class ArticleListView {
     $('deals-updated').textContent = `${snapshot.source === 'api' ? '서버 저장 목록' : '저장된 JSON'} · ${snapshot.updatedAt ? `최근 갱신 ${timestamp(snapshot.updatedAt)}` : '갱신 기록 없음'}`;
     const start = snapshot.articles.length ? snapshot.offset + 1 : 0;
     $('articles-summary').textContent = `${this.#interestOnly ? '관심 품목 ' : '총 '}${snapshot.total.toLocaleString('ko-KR')}개 · ${start}–${snapshot.offset + snapshot.articles.length} 표시 · 최신 ID 순`;
+    this.#shownArticles = snapshot.articles;
+    this.#renderRows();
+    $('articles-region').scrollTop = 0;
+    if (this.#hasData) { $('articles-empty').hidden = true; $('articles-table').hidden = false; }
+    else if (this.#interestOnly && !this.#keywords.length) this.#empty('등록된 관심 품목이 없습니다.', '관심 품목 탭에서 키워드를 등록하거나 관심 품목만 보기를 해제하세요.');
+    else if (this.#category) this.#empty(this.#interestOnly ? '이 분류에 관심 품목과 일치하는 게시글이 없습니다.' : '선택한 분류에 게시글이 없습니다.', '다른 분류를 선택하거나 전체 목록을 보세요.');
+    else if (this.#interestOnly) this.#empty('관심 품목과 일치하는 게시글이 없습니다.', '관심 품목 탭에서 키워드를 바꾸거나 관심 품목만 보기를 해제하세요.');
+    else this.#empty('아직 저장된 핫딜 게시글이 없습니다.', '서버를 시작하면 첫 수집 후 여기에 표시됩니다.');
+  }
+
+  #renderRows() {
+    this.#observer.disconnect();
+    const columns = visibleColumns(this.#columns);
+    const headings = columns.map(([key, name]) => {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.className = this.#columnClass(key);
+      th.textContent = name;
+      return th;
+    });
+    $('articles-head').replaceChildren(...headings);
     const fragment = document.createDocumentFragment();
-    for (const article of snapshot.articles) {
+    for (const article of this.#shownArticles) {
       const row = document.createElement('tr');
-      const titleCell = document.createElement('td');
-      const titleLayout = document.createElement('div'); titleLayout.className = 'article-title-layout';
-      const category = document.createElement('span'); category.className = 'article-category'; category.textContent = article.category || '미분류'; category.title = category.textContent;
-      const title = document.createElement('button'); title.type = 'button'; title.className = 'article-link'; title.textContent = article.title; title.title = `${article.title} · 기본 브라우저에서 원문 열기`;
-      title.addEventListener('click', () => {
-        void this.#api.openArticle(article.id).catch((error) => { $('articles-error').textContent = error.message; $('articles-error').hidden = false; });
-      });
-      titleLayout.append(category);
-      if (article.isNew === true) {
-        const badge = document.createElement('span'); badge.className = 'article-new'; badge.textContent = 'New';
-        badge.title = '가장 최근 새 글 수집에서 추가된 게시글'; badge.setAttribute('aria-hidden', 'true');
-        title.setAttribute('aria-label', `새 게시글: ${article.title}`);
-        titleLayout.append(badge);
-      }
-      titleLayout.append(title); titleCell.append(titleLayout); row.append(titleCell);
-      for (const [value, className, detail] of [
-        [article.author || '—', 'article-author', article.author || ''],
-        [timestamp(article.createdAt), 'article-date', article.createdAt || ''],
-        [number(article.views), 'numeric', ''], [number(article.recommendations), 'numeric', ''], [number(article.commentCount), 'numeric', ''],
-      ]) {
-        const cell = document.createElement('td'); cell.className = className; cell.textContent = value; cell.title = detail; row.append(cell);
-      }
+      for (const [key] of columns) row.append(this.#cell(article, key));
       fragment.append(row);
     }
     $('articles-body').replaceChildren(fragment);
-    $('articles-region').scrollTop = 0;
-    if (this.#hasData) { $('articles-empty').hidden = true; $('articles-table').hidden = false; }
-    else if (this.#interestOnly) this.#empty(this.#keywords.length ? '관심 품목과 일치하는 게시글이 없습니다.' : '등록된 관심 품목이 없습니다.', '관심 품목 탭에서 키워드를 등록하거나 관심 품목만 보기를 해제하세요.');
-    else this.#empty('아직 저장된 핫딜 게시글이 없습니다.', '서버를 시작하면 첫 수집 후 여기에 표시됩니다.');
+  }
+
+  #columnClass(key) { return `article-col-${key}${COUNTS.has(key) ? ' numeric' : ''}`; }
+
+  #newBadge() {
+    const badge = document.createElement('span');
+    badge.className = 'article-new';
+    badge.textContent = 'New';
+    badge.title = '가장 최근 새 글 수집에서 추가된 게시글';
+    return badge;
+  }
+
+  #openButton(article, label) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'article-link';
+    button.textContent = label;
+    button.title = `${label} · 기본 브라우저에서 원문 열기`;
+    button.addEventListener('click', () => {
+      void this.#api.openArticle(article.id).catch((error) => {
+        $('articles-error').textContent = error.message;
+        $('articles-error').hidden = false;
+      });
+    });
+    return button;
+  }
+
+  #cell(article, key) {
+    const cell = document.createElement('td');
+    cell.className = this.#columnClass(key);
+    if (key === 'title') {
+      const layout = document.createElement('div');
+      layout.className = 'article-title-layout';
+      const button = this.#openButton(article, article.title);
+      if (this.#columns.includes('isNew') && article.isNew === true) {
+        const badge = this.#newBadge();
+        badge.setAttribute('aria-hidden', 'true');
+        button.setAttribute('aria-label', `새 게시글: ${article.title}`);
+        layout.append(badge);
+      }
+      layout.append(button);
+      cell.append(layout);
+    } else if (key === 'url' && article.url) {
+      cell.append(this.#openButton(article, article.url));
+    } else if (key === 'category' && article.category) {
+      const category = document.createElement('span');
+      category.className = 'article-category';
+      category.textContent = category.title = article.category;
+      cell.append(category);
+    } else if (key === 'thumbnailUrl') {
+      const preview = document.createElement('div');
+      preview.className = 'article-thumb';
+      preview.textContent = '—';
+      cell.append(preview);
+      if (article.thumbnailUrl) {
+        this.#thumbnailJobs.set(preview, article);
+        this.#observer.observe(preview);
+      }
+    } else if (key === 'isNew' && article.isNew === true) {
+      cell.append(this.#newBadge());
+    } else {
+      cell.textContent = COUNTS.has(key) ? number(article[key]) : DATES.has(key) ? timestamp(article[key])
+        : key === 'isNotice' ? (article.isNotice === true ? '공지' : article.isNotice === false ? '일반' : '—')
+        : key === 'isNew' ? '—' : (article[key] || '—');
+      if (typeof article[key] === 'string') cell.title = article[key];
+    }
+    return cell;
+  }
+
+  async #loadThumbnail(preview) {
+    const article = this.#thumbnailJobs.get(preview);
+    if (!article || !preview.isConnected) return;
+    try {
+      const source = await this.#api.articleThumbnail(article.id, article.thumbnailUrl);
+      if (!preview.isConnected || typeof source !== 'string' || !/^data:image\/(?:jpeg|png|gif|webp|avif);base64,/.test(source)) return;
+      const img = document.createElement('img');
+      img.alt = '';
+      img.width = img.height = 100;
+      img.addEventListener('error', () => { preview.textContent = '—'; }, { once: true });
+      img.src = source;
+      preview.replaceChildren(img);
+    } catch {}
   }
 }

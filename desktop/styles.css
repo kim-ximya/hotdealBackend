@@ -26,8 +26,20 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
 .deals-heading h2{font-size:14px;margin:0;font-weight:600;white-space:nowrap}
 .deals-heading p{font-size:11px;color:var(--muted);margin:0}
 .deals-heading button{font-size:11px;min-height:30px;padding:6px 10px}
-.deals-tools{display:flex;align-items:center;gap:16px;flex-shrink:0}
+.deals-tools{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 12px}
+.deals-category{display:flex;align-items:center;gap:6px;font-size:11px;white-space:nowrap}
+.deals-category select{min-height:30px;padding:4px 6px}
 .deals-tools .check-setting{display:flex;align-items:center;gap:6px;min-height:30px;margin:0;font-size:11px;cursor:pointer;white-space:nowrap}
+.deals-tools button[aria-expanded=true]{border-color:#477a71;color:var(--accent)}
+.column-picker{padding:12px 14px;border-bottom:1px solid var(--border);background:#142031;flex-shrink:0}
+.column-picker fieldset{margin:0;padding:0;border:0;min-width:0}
+.column-picker legend{color:var(--text);font-size:12px;font-weight:600;padding:0;margin-bottom:9px}
+.column-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:6px 12px}
+.column-options label{display:flex;align-items:center;gap:6px;min-height:24px;color:#b6c5d7;font-size:11px;cursor:pointer;white-space:nowrap}
+.column-options input{margin:0;accent-color:var(--accent)}
+.column-picker-actions{display:flex;align-items:center;gap:8px;margin-top:10px}
+.column-picker-actions button{font-size:11px;min-height:28px;padding:4px 10px}
+.column-picker-actions p{margin:0 0 0 5px;font-size:11px;color:var(--muted)}
 .interests-panel.panel{flex:1;min-height:0;overflow:auto;padding:20px;scrollbar-color:#34465b transparent}
 .interest-form{margin-top:18px;max-width:580px}
 .interest-form>label{display:block;font-size:12px;margin-bottom:9px;color:#adbbcd}
@@ -38,20 +50,24 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
 .interest-keywords li>span{overflow-wrap:anywhere}
 .interest-keywords button{min-height:28px;padding:2px 8px;border:0;background:none;color:#9bc5bc;font-size:19px}
 .table-scroll{overflow:auto;flex:1;min-height:0;scrollbar-color:#34465b transparent;background:#101824}
-.table-scroll table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:780px}
-.table-scroll th{position:sticky;top:0;background:#1a2534;color:#8fa3bc;font-size:11px;font-weight:500;text-align:left;padding:9px 14px;z-index:1;border-bottom:1px solid var(--border)}
-.table-scroll th.article-title-col{width:55%}
-.table-scroll th:nth-child(2){width:12%}
-.table-scroll th:nth-child(3){width:15%}
-.table-scroll th:nth-child(n+4){width:6%}
-.table-scroll td{height:38px;border-bottom:1px solid #202d3f;padding:6px 14px;font-size:12px;color:#b6c5d7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.table-scroll table{width:100%;border-collapse:collapse;table-layout:auto}
+.table-scroll th{position:sticky;top:0;background:#1a2534;color:#8fa3bc;font-size:11px;font-weight:500;text-align:left;padding:9px 10px;z-index:1;border-bottom:1px solid var(--border);white-space:nowrap}
+.table-scroll th:not(:only-child){width:1%}
+.table-scroll th.article-col-title:not(:only-child){width:auto;min-width:230px}
+.table-scroll td{height:38px;border-bottom:1px solid #202d3f;padding:6px 10px;font-size:12px;color:#b6c5d7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.table-scroll td.article-col-title{max-width:0}
+.table-scroll td.article-col-url{max-width:210px}
+.table-scroll td.article-col-store,.table-scroll td.article-col-shipping,.table-scroll td.article-col-author{max-width:125px}
+.table-scroll td.article-col-price{font-variant-numeric:tabular-nums;color:#abebda}
+.table-scroll .article-col-createdAt,.table-scroll .article-col-firstSeenAt,.table-scroll .article-col-lastSeenAt{font-size:11px;color:#8297af}
+.article-thumb{width:100px;height:100px;display:grid;place-items:center;margin:auto;color:#8297af}
+.article-thumb img{width:100px;height:100px;object-fit:contain;border-radius:7px;background:#162234}
 .table-scroll tr:hover td{background:#172434}
 .article-title-layout{display:flex;align-items:center;gap:10px;min-width:0}
-.article-category{flex-shrink:0;max-width:83px;border-radius:4px;padding:3px 6px;font-size:10px;background:#213b3b;color:#95d1c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.article-category{display:inline-block;vertical-align:middle;max-width:83px;border-radius:4px;padding:3px 6px;font-size:10px;background:#213b3b;color:#95d1c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .article-new{flex-shrink:0;padding:3px 5px;border:1px solid #47765f;border-radius:4px;background:#1a3b2c;color:#a4efbd;font-size:10px;font-weight:700;line-height:1.2}
-button.article-link{min-height:0;padding:0;background:none;border:0;color:#e1eaf5;text-align:left;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button.article-link{display:block;min-height:0;min-width:0;max-width:100%;padding:0;background:none;border:0;color:#e1eaf5;text-align:left;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 button.article-link:hover:enabled{background:none;color:var(--accent);text-decoration:underline}
-.table-scroll .article-date{font-size:11px;color:#8297af}
 .table-scroll .numeric{text-align:right;font-variant-numeric:tabular-nums;padding-left:6px;padding-right:10px}
 .deals-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 14px;border-top:1px solid var(--border);font-size:11px;color:#8fa3bb;flex-shrink:0}
 .pagination{display:flex;align-items:center;gap:13px;font-variant-numeric:tabular-nums}

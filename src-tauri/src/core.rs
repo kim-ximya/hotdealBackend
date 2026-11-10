@@ -518,9 +518,30 @@ impl Core {
                     model::timestamp(),
                     self.config().max_articles,
                 )?;
-                model::write_json(&self.config().directory.join("articles.json"), &snapshot)?;
                 Ok((snapshot, committed))
             });
+            let result = match result {
+                Ok((snapshot, committed)) => {
+                    let agent = self.status().browser["effectiveUserAgent"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_owned();
+                    tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => break,
+                        _ = crate::thumbnails::collect(&self.config().directory, &self.0.client, &agent, &committed) => {}
+                    }
+                    if cancel.is_cancelled() {
+                        break;
+                    }
+                    model::write_json(&self.config().directory.join("articles.json"), &snapshot)
+                        .map(|()| {
+                            crate::thumbnails::prune(&self.config().directory, &snapshot.articles);
+                            (snapshot, committed)
+                        })
+                }
+                Err(error) => Err(error),
+            };
             match result {
                 Ok((snapshot, committed)) => {
                     self.log(
@@ -700,14 +721,54 @@ impl Core {
     }
 
     pub fn api_articles(&self, limit: usize, offset: usize) -> Value {
-        page(&self.data().articles, limit, offset, None, None)
+        page(&self.data().articles, limit, offset, None)
     }
 
-    pub async fn list(&self, limit: usize, offset: usize, interest_only: bool) -> Result<Value> {
+    pub(crate) fn api_thumbnail(&self, id: &str) -> Option<crate::thumbnails::Thumbnail> {
+        let source = self
+            .data()
+            .articles
+            .articles
+            .iter()
+            .find(|row| row.id == id)?
+            .thumbnail_url
+            .clone()?;
+        crate::thumbnails::read(&self.config().directory, id, &source)
+    }
+
+    #[cfg(feature = "desktop")]
+    pub(crate) async fn list_thumbnail(
+        &self,
+        id: &str,
+        source: &str,
+    ) -> Option<crate::thumbnails::Thumbnail> {
+        if !model::valid_id(id) {
+            return None;
+        }
+        if let Some(base) = self.external_base() {
+            let response = self
+                .0
+                .client
+                .get(format!("{base}/api/articles/{id}/thumbnail"))
+                .send()
+                .await
+                .ok()?;
+            return crate::thumbnails::read_response(response).await;
+        }
+        crate::thumbnails::read(&self.config().directory, id, source)
+    }
+
+    pub async fn list(
+        &self,
+        limit: usize,
+        offset: usize,
+        interest_only: bool,
+        category: Option<&str>,
+    ) -> Result<Value> {
         if !(1..=1000).contains(&limit) || (offset as u64) > 9_007_199_254_740_991 {
             return Err("limit는 1~1000, offset은 0 이상의 정수여야 합니다.".into());
         }
-        let (phase, owned, base, filter) = {
+        let (phase, owned, base, interests) = {
             let data = self.data();
             (
                 data.phase,
@@ -716,30 +777,21 @@ impl Core {
                 interest_only.then(|| data.interests.clone()),
             )
         };
+        let view = |source| ListView {
+            category: category.map(str::trim).filter(|name| !name.is_empty()),
+            interests: interests.as_ref(),
+            source,
+        };
         if phase == "running" && owned {
             return Ok(page(
                 &self.data().articles,
                 limit,
                 offset,
-                filter.as_ref(),
-                Some("api"),
+                Some(view("api")),
             ));
         }
         if let Some(base) = base.filter(|_| phase == "running") {
-            if filter.is_none() {
-                let mut value: Value = self
-                    .remote(
-                        &base,
-                        &format!("/api/articles?limit={limit}&offset={offset}"),
-                        None,
-                    )
-                    .await?;
-                if !value.is_object() {
-                    return Err("외부 서버 목록 형식이 올바르지 않습니다.".into());
-                }
-                value["source"] = json!("api");
-                return Ok(value);
-            }
+            // External servers provide unfiltered pages, so apply view filters after reading them.
             let mut data: Articles = self
                 .remote(&base, "/api/articles?limit=1000&offset=0", None)
                 .await?;
@@ -763,10 +815,10 @@ impl Core {
                 }
                 data.articles.extend(chunk.articles);
             }
-            return Ok(page(&data, limit, offset, filter.as_ref(), Some("api")));
+            return Ok(page(&data, limit, offset, Some(view("api"))));
         }
         let data = model::load_articles(&self.config().directory, self.config().max_articles)?;
-        Ok(page(&data, limit, offset, filter.as_ref(), Some("file")))
+        Ok(page(&data, limit, offset, Some(view("file"))))
     }
 
     pub fn api_collect(&self) -> Result<bool> {
@@ -905,26 +957,37 @@ fn load_user_agent(config: &Config) -> Result<String> {
     model::user_agent(&value)
 }
 
-fn page(
-    data: &Articles,
-    limit: usize,
-    offset: usize,
-    filter: Option<&Interests>,
-    source: Option<&str>,
-) -> Value {
-    let rows: Vec<_> = data
+struct ListView<'a> {
+    category: Option<&'a str>,
+    interests: Option<&'a Interests>,
+    source: &'static str,
+}
+
+fn page(data: &Articles, limit: usize, offset: usize, view: Option<ListView<'_>>) -> Value {
+    let visible = data
         .articles
         .iter()
-        .filter(|row| filter.is_none_or(|filter| filter.matches(&row.title)))
+        .filter(|row| view.is_none() || row.category.as_deref().map(str::trim) != Some("바이럴"));
+    let all_total = view.as_ref().map(|_| visible.clone().count());
+    let rows: Vec<_> = visible
+        .filter(|row| {
+            view.as_ref().is_none_or(|view| {
+                view.category
+                    .is_none_or(|name| row.category.as_deref().map(str::trim) == Some(name))
+                    && view
+                        .interests
+                        .is_none_or(|filter| filter.matches(&row.title))
+            })
+        })
         .collect();
     let total = rows.len();
     let articles: Vec<_> = rows.into_iter().skip(offset).take(limit).collect();
     let mut value = json!({"schemaVersion":data.schema_version,"channel":data.channel,"sourceUrl":data.source_url,
         "updatedAt":data.updated_at,"latestCount":data.latest_count,"total":total,"limit":limit,"offset":offset,
         "returnedCount":articles.len(),"articles":articles});
-    if let Some(source) = source {
-        value["source"] = json!(source);
-        value["allTotal"] = json!(data.total);
+    if let Some(view) = view {
+        value["source"] = json!(view.source);
+        value["allTotal"] = json!(all_total);
     }
     value
 }

@@ -165,6 +165,14 @@ pub struct Article {
     pub views: Option<i64>,
     pub recommendations: Option<i64>,
     pub comment_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shipping: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
     #[serde(default)]
     pub is_notice: bool,
     #[serde(default)]
@@ -439,7 +447,7 @@ pub fn parse_articles(html: &str) -> Result<Vec<Article>> {
     let mut articles = Vec::new();
     let (mut seen, mut missing) = (HashSet::new(), HashSet::new());
     let mut row_count = 0;
-    let ignore = selector(".badges, .badge, .deal-store, .category, .info, .media-icon, .comment-count, .col-comment, .icons, .icon, i, svg, script, style");
+    let ignore = selector(".badges, .badge, .deal-store, .deal-price, .deal-delivery, .category, .info, .media-icon, .comment-count, .col-comment, .icons, .icon, i, svg, script, style");
     for row in table.select(&selector(".vrow:not(.head, .notice-unfilter)")) {
         row_count += 1;
         let id = if row.value().name() == "a" {
@@ -493,12 +501,23 @@ pub fn parse_articles(html: &str) -> Result<Vec<Article>> {
             })
             .map(str::to_owned)
             .or_else(|| column.and_then(text));
+        let thumbnail_url = first(row, ".preview-image img, .vrow-preview img").and_then(|img| {
+            ["data-src", "src"]
+                .into_iter()
+                .filter_map(|attr| img.attr(attr))
+                .find_map(crate::thumbnails::source_url)
+                .map(|url| url.to_string())
+        });
         articles.push(Article { url: format!("{SOURCE_URL}/{id}"), id, title,
             category: first(row, ".col-title .badge, .title .badge, .category, .badge").and_then(text),
             author: first(row, ".col-author .user-info, .col-author .member-info, .col-author, .user-info, .member-info").and_then(text),
             created_at, views: number(first(row, ".col-view, .col-views").and_then(text)),
             recommendations: number(first(row, ".col-rate, .col-recommend").and_then(text)),
             comment_count: number(first(row, ".comment-count, .col-comment").and_then(text)),
+            price: first(row, ".deal-price").and_then(text),
+            store: first(row, ".deal-store").and_then(text),
+            shipping: first(row, ".deal-delivery").and_then(text),
+            thumbnail_url,
             is_notice, is_new: false, first_seen_at: None, last_seen_at: None,
         });
     }
