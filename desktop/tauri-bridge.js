@@ -16,6 +16,7 @@ export const mainApi = {
   collect: () => action('collect'), setInterval: (value) => action('interval', value),
   setUserAgent: (value) => action('userAgent', value), articles: (value) => action('articles', value),
   articleThumbnail: (id, source) => action('articleThumbnail', { id, source }),
+  resetArticles: () => action('resetArticles'),
   openArticle: (id) => action('openArticle', id), openLogs: () => action('openLogs'),
   openData: () => action('openData'), hideToTray: () => action('hideToTray'),
   updateState: () => action('updateState'), downloadUpdate: () => action('downloadUpdate'),

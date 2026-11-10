@@ -134,7 +134,7 @@ export class ArticleListView {
     const source = snapshot.phase === 'running' ? snapshot.baseUrl : `file:${snapshot.dataDirectory}`;
     if (source !== this.#source) this.#page = 1;
     this.#source = source;
-    this.#context = JSON.stringify([source, snapshot.status?.lastSuccessAt, snapshot.status?.articleCount,
+    this.#context = JSON.stringify([source, snapshot.articleResetRevision, snapshot.status?.lastSuccessAt, snapshot.status?.articleCount,
       this.#category, this.#interestOnly ? this.#keywords : null]);
     if (this.#context !== this.#requestedContext) void this.#load();
   }

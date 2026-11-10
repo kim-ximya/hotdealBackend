@@ -10,6 +10,8 @@ use std::{
 use url::Url;
 
 const MAX_BYTES: usize = 128 * 1024;
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
 pub(crate) struct Thumbnail {
     pub media_type: &'static str,
@@ -142,15 +144,32 @@ pub(crate) async fn collect(
     let _ = tokio::time::timeout(Duration::from_secs(8), batch).await;
 }
 
-pub(crate) fn prune(directory: &Path, rows: &[Article]) {
-    let Ok(entries) = fs::read_dir(cache(directory)) else {
-        return;
+pub(crate) fn prune(directory: &Path, rows: &[Article]) -> std::io::Result<()> {
+    let cache = cache(directory);
+    let metadata = match fs::symlink_metadata(&cache) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
     };
+    if !metadata.is_dir() {
+        return Err(std::io::Error::other(
+            "썸네일 캐시 경로가 일반 폴더가 아닙니다.",
+        ));
+    }
+    #[cfg(windows)]
+    if std::os::windows::fs::MetadataExt::file_attributes(&metadata) & FILE_ATTRIBUTE_REPARSE_POINT
+        != 0
+    {
+        return Err(std::io::Error::other(
+            "썸네일 캐시 경로가 재분석 지점입니다.",
+        ));
+    }
     let retained: HashSet<_> = rows
         .iter()
         .filter_map(|row| filename(&row.id, &source_url(row.thumbnail_url.as_deref()?)?))
         .collect();
-    for entry in entries.flatten() {
+    for entry in fs::read_dir(cache)? {
+        let entry = entry?;
         let name = entry.file_name();
         let Some(name) = name.to_str() else {
             continue;
@@ -161,11 +180,15 @@ pub(crate) fn prune(directory: &Path, rows: &[Article]) {
             .is_some_and(|(id, hash)| {
                 valid_id(id) && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
             });
-        if managed && !retained.contains(name) && entry.file_type().is_ok_and(|kind| kind.is_file())
-        {
-            let _ = fs::remove_file(entry.path());
+        if managed && !retained.contains(name) && entry.file_type()?.is_file() {
+            match fs::remove_file(entry.path()) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]

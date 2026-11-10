@@ -82,6 +82,7 @@ pub struct Log {
 
 struct Data {
     revision: u64,
+    article_reset_revision: u64,
     phase: &'static str,
     owned: bool,
     base: Option<String>,
@@ -159,6 +160,7 @@ impl Core {
             config,
             data: Mutex::new(Data {
                 revision: 0,
+                article_reset_revision: 0,
                 phase: if error.is_some() { "error" } else { "stopped" },
                 owned: false,
                 base: None,
@@ -222,7 +224,8 @@ impl Core {
 
     pub fn snapshot(&self) -> Value {
         let data = self.data();
-        json!({"revision":data.revision,"phase":data.phase,"owned":data.owned,"baseUrl":data.base,"error":data.error,
+        json!({"revision":data.revision,"articleResetRevision":data.article_reset_revision,"localArticleCount":data.articles.total,
+            "phase":data.phase,"owned":data.owned,"baseUrl":data.base,"error":data.error,
             "dataDirectory":self.config().directory,"intervalSeconds":data.status.interval_seconds,"userAgent":data.ua,"status":data.status})
     }
     pub fn status(&self) -> Status {
@@ -368,16 +371,7 @@ impl Core {
                 }
             }
         }
-        fs::create_dir_all(&config.directory).map_err(|e| e.to_string())?;
-        let lock = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(config.directory.join(".collector.lock"))
-            .map_err(|e| e.to_string())?;
-        fs2::FileExt::try_lock_exclusive(&lock)
-            .map_err(|_| "다른 수집기가 같은 저장 폴더를 사용 중입니다.")?;
+        let lock = lock_data_directory(config)?;
         // Reload under the lock so a preceding writer cannot leave a stale baseline.
         let articles = model::load_articles(&config.directory, config.max_articles)?;
         let interval = load_interval(config)?;
@@ -471,6 +465,45 @@ impl Core {
         Ok(self.snapshot())
     }
 
+    pub async fn reset_articles(&self) -> Result<Value> {
+        let running = self.0.running.lock().await;
+        if running.is_some() {
+            return Err(
+                "수집 서버를 중지하거나 외부 서버 연결을 해제한 뒤 다시 시도하세요.".into(),
+            );
+        }
+        let config = self.config();
+        let _lock = lock_data_directory(config)?;
+        match fs::remove_file(config.directory.join("articles.json")) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("게시글 데이터를 초기화하지 못했습니다. {error}")),
+        }
+        let cleanup = crate::thumbnails::prune(&config.directory, &[]);
+        self.update(|data| {
+            data.article_reset_revision += 1;
+            data.articles = Articles::default();
+            data.status.article_count = 0;
+            data.status.last_success_at = None;
+            if data.phase == "error" {
+                data.error = load_interval(config)
+                    .err()
+                    .or_else(|| load_user_agent(config).err());
+                if data.error.is_none() {
+                    data.phase = "stopped";
+                }
+            }
+        });
+        self.log("info", "저장된 핫딜 게시글을 초기화했습니다.");
+        if let Err(error) = cleanup {
+            let message =
+                format!("게시글은 초기화했지만 일부 썸네일을 삭제하지 못했습니다. {error}");
+            self.log("error", &message);
+            return Err(message);
+        }
+        Ok(self.snapshot())
+    }
+
     async fn schedule(
         &self,
         mut collector: Collector,
@@ -536,7 +569,10 @@ impl Core {
                     }
                     model::write_json(&self.config().directory.join("articles.json"), &snapshot)
                         .map(|()| {
-                            crate::thumbnails::prune(&self.config().directory, &snapshot.articles);
+                            let _ = crate::thumbnails::prune(
+                                &self.config().directory,
+                                &snapshot.articles,
+                            );
                             (snapshot, committed)
                         })
                 }
@@ -928,6 +964,20 @@ impl Core {
         );
         Ok(self.snapshot())
     }
+}
+
+fn lock_data_directory(config: &Config) -> Result<File> {
+    fs::create_dir_all(&config.directory).map_err(|e| e.to_string())?;
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(config.directory.join(".collector.lock"))
+        .map_err(|e| e.to_string())?;
+    fs2::FileExt::try_lock_exclusive(&lock)
+        .map_err(|_| "다른 수집기가 같은 저장 폴더를 사용 중입니다.")?;
+    Ok(lock)
 }
 
 fn next_tick(last: i64, now: i64, seconds: u64) -> i64 {

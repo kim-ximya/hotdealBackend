@@ -4,6 +4,9 @@ import { InterestView } from './interest-view.js';
 import { UpdateView } from './update-view.js';
 
 const $ = (id) => document.getElementById(id);
+const resetDialog = $('reset-articles-dialog');
+const resetConfirm = $('confirm-reset-articles');
+const resetWait = $('reset-articles-wait');
 const articleList = new ArticleListView(mainApi);
 const updateView = new UpdateView(mainApi, { version: $('app-version'), button: $('app-update'), status: $('update-status') });
 void updateView.initialize();
@@ -12,6 +15,8 @@ let busy = false;
 let dirty = false;
 let userAgentDirty = false;
 let toastTimer;
+let resetTimer;
+let resetAvailableAt = 0;
 let actionError = null;
 const time = (value) => value ? new Date(value).toLocaleTimeString('en-GB', { hour12: false }) : '기록 없음';
 const date = (value) => value ? new Date(value).toLocaleDateString('ko-KR') : '첫 수집을 기다리고 있습니다.';
@@ -35,6 +40,17 @@ async function action(operation, message) {
     if (message) toast(message);
   } catch (error) { actionError = error.message; }
   finally { busy = false; if (current) render(current); }
+}
+function canResetArticles(snapshot) {
+  return snapshot && !busy && !snapshot.owned && ['stopped', 'error'].includes(snapshot.phase);
+}
+function updateResetConfirmation() {
+  const seconds = Math.max(0, Math.ceil((resetAvailableAt - performance.now()) / 1000));
+  resetConfirm.disabled = seconds > 0 || !canResetArticles(current);
+  const message = seconds > 0 ? `${seconds}초 후에 초기화 버튼이 활성화됩니다.`
+    : canResetArticles(current) ? '초기화하려면 아래 버튼을 누르세요.' : '수집 서버를 중지한 뒤 다시 시도하세요.';
+  if (resetWait.textContent !== message) resetWait.textContent = message;
+  if (seconds === 0) clearInterval(resetTimer);
 }
 function renderCountdown() {
   const status = current?.status;
@@ -77,6 +93,8 @@ function render(snapshot) {
     : snapshot.userAgent ? '사용자 지정 User-Agent 저장됨' : 'Chrome 기본값 사용';
   $('user-agent-restart').hidden = !needsRestart;
   $('open-data').disabled = busy || (running && !owned);
+  $('reset-articles').disabled = !canResetArticles(snapshot);
+  if (resetDialog.open) updateResetConfirmation();
   $('article-count').textContent = (status?.articleCount || 0).toLocaleString('ko-KR');
   $('last-success').textContent = time(status?.lastSuccessAt);
   $('last-date').textContent = date(status?.lastSuccessAt);
@@ -106,6 +124,28 @@ function render(snapshot) {
 $('start').addEventListener('click', () => action(() => mainApi.start(), '서버를 시작했습니다.'));
 $('stop').addEventListener('click', () => action(() => mainApi.stop(), current?.owned ? '서버를 중지했습니다.' : '연결을 해제했습니다.'));
 $('collect').addEventListener('click', () => action(() => mainApi.collect(), '즉시 수집을 요청했습니다.'));
+$('reset-articles').addEventListener('click', () => {
+  if (!canResetArticles(current) || resetDialog.open) return;
+  const count = current.localArticleCount;
+  const stored = count > 0 ? ` 앱이 확인한 보관 글은 ${count.toLocaleString('ko-KR')}개입니다.` : '';
+  $('reset-articles-description').textContent = `저장된 게시글과 썸네일이 모두 삭제됩니다.${stored} 이 작업은 되돌릴 수 없습니다.`;
+  resetConfirm.disabled = true;
+  resetDialog.showModal();
+  resetAvailableAt = performance.now() + 5000;
+  clearInterval(resetTimer);
+  resetTimer = setInterval(updateResetConfirmation, 100);
+  updateResetConfirmation();
+});
+resetDialog.addEventListener('close', () => {
+  if (resetDialog.open) return;
+  clearInterval(resetTimer);
+  resetConfirm.disabled = true;
+});
+resetConfirm.addEventListener('click', () => {
+  if (!resetDialog.open || performance.now() < resetAvailableAt || !canResetArticles(current)) return;
+  resetDialog.close();
+  void action(() => mainApi.resetArticles(), '저장된 게시글과 썸네일을 초기화했습니다.');
+});
 // Hiding the window remains available while a server action is in progress.
 $('hide-to-tray').addEventListener('click', () => {
   mainApi.hideToTray().catch((error) => {

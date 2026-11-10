@@ -186,6 +186,7 @@ async fn desktop_action(
                 )
                 .await
         }
+        "resetArticles" => state.core.reset_articles().await,
         "articleThumbnail" => {
             use base64::Engine;
             let id = value["id"]

@@ -312,7 +312,60 @@ async fn corrupt_state_is_not_overwritten_by_startup() {
     assert_eq!(core.snapshot()["phase"], "error");
     assert!(core.start(false).await.is_err());
     assert!(core.list(1, 0, false, None).await.is_err());
-    assert_eq!(std::fs::read_to_string(path).unwrap(), "broken");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken");
+    assert_eq!(core.reset_articles().await.unwrap()["phase"], "stopped");
+    assert!(!path.exists());
+    assert_eq!(core.list(1, 0, false, None).await.unwrap()["total"], 0);
+}
+
+#[tokio::test]
+async fn article_reset_requires_exclusive_access_and_clears_only_collected_data() {
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = config(temp.path());
+    seed(&cfg, model::parse_articles(HYBRID).unwrap());
+    let core = Core::new(cfg.clone());
+    core.set_interval(75).await.unwrap();
+    core.set_user_agent("Chrome test").await.unwrap();
+    let cache = cfg.directory.join("thumbnails");
+    std::fs::create_dir(&cache).unwrap();
+    let thumbnail = cache.join(format!("185704738-{}.img", "a".repeat(64)));
+    let other_file = cache.join("notes.txt");
+    std::fs::write(&thumbnail, b"cached thumbnail").unwrap();
+    std::fs::write(&other_file, b"keep").unwrap();
+    let articles = cfg.directory.join("articles.json");
+
+    core.start(false).await.unwrap();
+    assert!(core
+        .reset_articles()
+        .await
+        .unwrap_err()
+        .contains("수집 서버를 중지"));
+    let other = Core::new(cfg.clone());
+    assert!(other
+        .reset_articles()
+        .await
+        .unwrap_err()
+        .contains("같은 저장 폴더"));
+    assert!(articles.is_file());
+    assert!(thumbnail.is_file());
+    core.stop().await.unwrap();
+
+    let snapshot = core.reset_articles().await.unwrap();
+    assert_eq!(snapshot["articleResetRevision"], 1);
+    assert_eq!(snapshot["localArticleCount"], 0);
+    assert_eq!(snapshot["status"]["articleCount"], 0);
+    assert!(snapshot["status"]["lastSuccessAt"].is_null());
+    assert!(!articles.exists());
+    assert!(!thumbnail.exists());
+    assert_eq!(std::fs::read(&other_file).unwrap(), b"keep");
+    let restored = Core::new(cfg);
+    assert_eq!(restored.snapshot()["intervalSeconds"], 75);
+    assert_eq!(restored.snapshot()["userAgent"], "Chrome test");
+    assert_eq!(restored.list(10, 0, false, None).await.unwrap()["total"], 0);
+    assert_eq!(
+        restored.reset_articles().await.unwrap()["localArticleCount"],
+        0
+    );
 }
 
 #[tokio::test]

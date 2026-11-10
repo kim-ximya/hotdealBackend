@@ -104,6 +104,7 @@
             <button id="browser-tab" type="button" role="tab" aria-selected="false" aria-controls="browser-settings" tabindex="-1">브라우저</button>
             <button id="notification-tab" type="button" role="tab" aria-selected="false" aria-controls="notification-settings" tabindex="-1">알림</button>
             <button id="startup-tab" type="button" role="tab" aria-selected="false" aria-controls="startup-settings" tabindex="-1">시작</button>
+            <button id="advanced-tab" type="button" role="tab" aria-selected="false" aria-controls="advanced-settings" tabindex="-1">고급</button>
           </div>
           <div class="settings-content">
           <div id="collection-settings" class="settings-grid" role="tabpanel" aria-labelledby="collection-tab">
@@ -186,11 +187,28 @@
             <p class="help">자동 실행을 해제해도 현재 실행 중인 서버는 계속 동작합니다.</p>
             </article>
           </div>
+          <div id="advanced-settings" class="settings-grid" role="tabpanel" aria-labelledby="advanced-tab" hidden>
+            <article class="setting-card">
+              <div class="setting-card-heading"><h3>핫딜 게시글 데이터 초기화</h3></div>
+              <p class="setting-description">이 앱에 저장된 게시글과 썸네일을 삭제합니다.</p>
+              <button id="reset-articles" type="button" class="danger" aria-describedby="reset-articles-help" disabled>게시글 데이터 초기화</button>
+              <p id="reset-articles-help" class="help">수집 서버가 중지된 상태에서 실행할 수 있습니다.</p>
+            </article>
+          </div>
           </div>
       </section>
     </main>
     <footer class="footer"><span><span class="tiny-dot"></span> <span id="footer-state">로컬에서 안전하게 보관</span></span><span>닫기·최소화 → 트레이 숨기기 · 완전 종료 → 트레이 메뉴</span></footer>
   </div>
   <div id="toast" role="status" hidden></div>
+  <dialog id="reset-articles-dialog" class="reset-dialog" aria-labelledby="reset-articles-title" aria-describedby="reset-articles-description">
+    <h2 id="reset-articles-title">게시글 데이터를 초기화할까요?</h2>
+    <p id="reset-articles-description">저장된 핫딜 게시글과 썸네일이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
+    <p id="reset-articles-wait" class="help" role="status"></p>
+    <form method="dialog" class="reset-dialog-actions">
+      <button type="submit" autofocus>취소</button>
+      <button id="confirm-reset-articles" type="button" class="danger" disabled>게시글 데이터 초기화</button>
+    </form>
+  </dialog>
 </body>
 </html>
