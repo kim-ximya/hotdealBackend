@@ -1,6 +1,6 @@
 {
   "name": "hotdeal-backend",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Tauri와 Rust 기반 아카라이브 핫딜 수집 앱",
   "type": "module",

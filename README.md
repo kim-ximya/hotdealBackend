@@ -59,6 +59,8 @@ Windows NSIS 설치 파일은 `src-tauri/target/x86_64-pc-windows-msvc/release/b
 
 기존 **Electron 1.1.0 → Tauri 2.0.0**은 수동 전환입니다. 구버전 앱을 트레이에서 완전히 종료하고, Windows 시작 항목이 중복되지 않도록 구버전을 제거한 뒤 새 설치 파일을 실행하세요. 게시글과 설정은 기존 `%APPDATA%\HotdealCollector`에서 이어 읽습니다. 개발판은 기존 `.local/desktop`과 `.local/selenium-server`를 사용합니다. 기존 앱을 유지하며 비교할 때는 `HOTDEAL_USER_DATA_DIR`와 `DATA_DIR`를 별도 폴더로 지정하세요.
 
-서명 없이 빌드한 설치판에서도 수집과 UI를 이용할 수 있습니다. 이후 앱 내 업데이트를 사용하려면 [Tauri 업데이터](https://v2.tauri.app/plugin/updater/) 공개키와 개인키로 서명된 설치판을 먼저 배포해야 합니다. 빌드 시 `TAURI_UPDATER_PUBLIC_KEY`에는 공개키 파일의 내용, `TAURI_SIGNING_PRIVATE_KEY`에는 개인키 내용 또는 경로를 지정합니다. 암호가 있는 경우 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`도 지정합니다. GitHub 정식 릴리즈에는 새 설치 파일, 서명, 해당 파일의 URL·서명을 담은 `latest.json`을 게시합니다. 배포 작업은 빌드 명령이 수행하지 않습니다.
+기존 **Tauri 2.0.0 → 2.1.0**은 한 번 직접 설치해야 합니다. 2.0.0을 트레이에서 완전히 종료하고 2.1.0 설치 파일을 실행하면 기존 게시글과 설정을 이어 읽습니다. 2.1.0부터 앱이 새 릴리즈를 자동으로 확인하며, 새 버전이 있으면 제목 옆의 업데이트 버튼으로 내려받아 설치할 수 있습니다.
+
+정식 릴리즈를 빌드할 때는 `tauri.conf.json`의 [Tauri 업데이트 공개키](https://v2.tauri.app/plugin/updater/)에 대응하는 개인키의 내용 또는 경로를 `TAURI_SIGNING_PRIVATE_KEY`에 지정합니다. 암호가 있는 경우 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`도 지정합니다. GitHub 정식 릴리즈에는 설치 파일, 서명, 해당 파일의 URL과 서명을 담은 `latest.json`을 함께 게시합니다. 배포 작업은 빌드 명령이 수행하지 않습니다.
 
 [Tauri UI 구조](docs/desktop-ui.md) · [이전 버전 릴리즈](https://github.com/kim-ximya/hotdealBackend/releases)
