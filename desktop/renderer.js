@@ -15,6 +15,8 @@ let current;
 let busy = false;
 let dirty = false;
 let userAgentDirty = false;
+let savingNotifications = false;
+let notificationVolumeRevision = 0;
 let toastTimer;
 let resetTimer;
 let resetAvailableAt = 0;
@@ -98,6 +100,8 @@ function render(snapshot) {
   $('user-agent-restart').hidden = !needsRestart;
   $('open-data').disabled = busy || (running && !owned);
   $('reset-articles').disabled = $('reset-settings').disabled = !canReset(snapshot);
+  $('backup-settings').disabled = $('backup-settings-choose').disabled = busy;
+  $('open-backup-folder').disabled = busy;
   if (resetDialog.open) updateResetConfirmation();
   $('article-count').textContent = (status?.articleCount || 0).toLocaleString('ko-KR');
   $('last-success').textContent = time(status?.lastSuccessAt);
@@ -235,12 +239,47 @@ async function resetSettings() {
   interestView.resetSettings(interests);
   renderNotificationSettings(notifications);
   if (startup) renderStartupSettings(startup);
+  try { renderBackupDirectory(await mainApi.backupLocation()); }
+  catch (error) { errors.push(error.message); }
   if (errors.length) {
     render(snapshot);
     throw new Error(`일부 설정을 초기화하지 못했습니다. ${errors.join(' ')}`);
   }
   return snapshot;
 }
+function renderBackupDirectory(directory) {
+  $('backup-directory').textContent = directory;
+  $('open-backup-folder').title = directory;
+}
+mainApi.backupLocation().then(renderBackupDirectory).catch((error) => {
+  $('backup-directory').textContent = error.message;
+});
+async function backupSettings() {
+  await action(async () => {
+    const status = $('backup-status');
+    status.textContent = '설정을 백업하고 있습니다.';
+    try {
+      const result = await mainApi.backupSettings({ articleList: articleList.preferences() });
+      status.textContent = `백업 완료 · ${result.path}`;
+      renderBackupDirectory(result.directory);
+      toast('설정 백업 파일을 저장했습니다.');
+    } catch (error) {
+      status.textContent = error.message;
+      throw error;
+    }
+  });
+}
+$('backup-settings').addEventListener('click', () => { void backupSettings(); });
+$('backup-settings-choose').addEventListener('click', () => {
+  void action(async () => {
+    const directory = await mainApi.chooseBackupFolder();
+    if (directory) {
+      renderBackupDirectory(directory);
+      $('backup-status').textContent = '백업 폴더를 변경했습니다.';
+    }
+  });
+});
+$('open-backup-folder').addEventListener('click', () => { void action(() => mainApi.openBackupFolder()); });
 function renderStartupSettings(settings) {
   $('startup-enabled').checked = settings.enabled;
   $('startup-enabled').disabled = !settings.supported;
@@ -271,24 +310,63 @@ $('startup-form').addEventListener('submit', async (event) => {
   }
 });
 function renderNotificationSettings(settings) {
+  notificationVolumeRevision += 1;
   $('notifications-enabled').checked = settings.enabled;
   $('notification-sound').checked = settings.soundEnabled;
-  $('notification-status').textContent = `새 글 알림 ${settings.enabled ? '켜짐' : '꺼짐'} · 소리 ${settings.soundEnabled ? '켜짐' : '꺼짐'}`;
-  for (const id of ['notifications-enabled', 'notification-sound', 'save-notifications']) $(id).disabled = false;
+  $('notification-volume').value = settings.volume ?? Number($('notification-volume').defaultValue);
+  renderNotificationVolume();
+  $('notification-status').textContent = `새 글 알림 ${settings.enabled ? '켜짐' : '꺼짐'} · 소리 ${settings.soundEnabled ? '켜짐' : '꺼짐'} · 음량 ${$('notification-volume').value}%`;
+  notificationControls();
 }
+function notificationControls() {
+  for (const id of ['notifications-enabled', 'notification-sound', 'save-notifications']) $(id).disabled = savingNotifications;
+  $('notification-volume').disabled = savingNotifications || !$('notification-sound').checked;
+}
+function renderNotificationVolume() {
+  const text = `${$('notification-volume').value}%`;
+  $('notification-volume-value').textContent = text;
+  $('notification-volume').setAttribute('aria-valuetext', text);
+}
+$('notification-volume').addEventListener('input', renderNotificationVolume);
+$('notification-volume').addEventListener('change', async () => {
+  const revision = ++notificationVolumeRevision;
+  const volume = Number($('notification-volume').value);
+  $('notification-status').textContent = `알림 음량 ${volume}% · 저장 중`;
+  try {
+    const saved = await mainApi.setNotificationVolume(volume);
+    if (revision === notificationVolumeRevision) {
+      $('notification-status').textContent = `알림 음량 ${saved.volume}% · 자동 저장됨`;
+    }
+  } catch (error) {
+    if (revision === notificationVolumeRevision) $('notification-status').textContent = error.message;
+  }
+});
+$('notification-sound').addEventListener('change', notificationControls);
 mainApi.notificationSettings().then(renderNotificationSettings).catch((error) => {
   $('notification-status').textContent = `설정을 불러오지 못했습니다: ${error.message}`;
 });
-$('notification-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  $('save-notifications').disabled = true;
+async function saveNotifications() {
+  if (savingNotifications) return;
+  const settings = {
+    enabled: $('notifications-enabled').checked,
+    soundEnabled: $('notification-sound').checked,
+    volume: Number($('notification-volume').value),
+  };
+  savingNotifications = true;
+  notificationVolumeRevision += 1;
+  notificationControls();
   try {
-    renderNotificationSettings(await mainApi.setNotificationSettings({
-      enabled: $('notifications-enabled').checked, soundEnabled: $('notification-sound').checked,
-    }));
+    renderNotificationSettings(await mainApi.setNotificationSettings(settings));
     toast('알림 설정을 저장했습니다. 바로 적용됩니다.');
   } catch (error) { $('notification-status').textContent = error.message; }
-  finally { $('save-notifications').disabled = false; }
+  finally {
+    savingNotifications = false;
+    notificationControls();
+  }
+}
+$('notification-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  void saveNotifications();
 });
 $('test-notification').addEventListener('click', async () => {
   $('test-notification').disabled = true;

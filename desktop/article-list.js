@@ -148,6 +148,10 @@ export class ArticleListView {
     if (changed) this.#changeFilters();
   }
 
+  preferences() {
+    return { columns: [...this.#columns], category: this.#category, interestOnly: this.#interestOnly };
+  }
+
   resetPreferences() {
     try {
       localStorage.removeItem(COLUMN_KEY);

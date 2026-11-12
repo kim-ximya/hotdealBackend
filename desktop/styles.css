@@ -135,6 +135,9 @@ h1{font-size:18px;margin:0 0 2px;font-weight:650;letter-spacing:-.5px}
 .api-address{display:block;padding:12px;background:#0c1420;border:1px solid #27364a;border-radius:7px;margin-bottom:10px}
 .settings label.check-setting{display:flex;align-items:center;gap:8px;line-height:1.6;margin-bottom:14px;color:var(--text);cursor:pointer}
 .check-setting input{accent-color:var(--accent);margin:0}
+#notification-volume{width:100%;accent-color:var(--accent);margin:0}
+#notification-volume:disabled{opacity:.4}
+#notification-volume-value{margin-left:8px;color:var(--accent);font-variant-numeric:tabular-nums}
 textarea{display:block;width:100%;resize:vertical;min-height:100px;max-height:170px;padding:10px;border:1px solid #35445b;border-radius:7px;background:#0e1724;color:var(--text);font:11px/1.6 Consolas,monospace}
 textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 textarea:disabled{opacity:.45}
@@ -167,6 +170,8 @@ code{font-size:11px;color:#c0d1df;overflow-wrap:anywhere}
 .reset-dialog h2{font-size:17px;margin:0 0 12px}
 .reset-dialog p{line-height:1.6}
 .reset-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.backup-actions{display:flex;flex-wrap:wrap;gap:8px}
+#backup-directory,#backup-status{white-space:normal;overflow-wrap:anywhere}
 [hidden]{display:none!important}
 @media(max-width:1000px){.app{padding:14px 16px 10px}
 .server-toolbar{gap:12px}

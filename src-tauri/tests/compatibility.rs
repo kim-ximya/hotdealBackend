@@ -369,6 +369,97 @@ async fn article_reset_requires_exclusive_access_and_clears_only_collected_data(
 }
 
 #[tokio::test]
+async fn notification_volume_loads_old_settings_and_rejects_invalid_values() {
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = config(temp.path());
+    let path = cfg.user_data.join("notification-settings.json");
+    std::fs::write(&path, r#"{"enabled":false,"soundEnabled":true}"#).unwrap();
+    let core = Core::new(cfg.clone());
+    assert_eq!(
+        core.notifications().volume,
+        NotificationSettings::default().volume
+    );
+    let mut settings = core.set_notification_volume(28).unwrap();
+    assert!(!settings.enabled && settings.sound_enabled);
+    assert_eq!(Core::new(cfg.clone()).notifications().volume, 28);
+    assert_eq!(
+        core.settings_backup().await.unwrap()["notifications"]["volume"],
+        28
+    );
+    settings.volume = 101;
+    assert!(core.set_notifications(settings).is_err());
+    assert!(core.set_notification_volume(101).is_err());
+    assert_eq!(core.notifications().volume, 28);
+    assert_eq!(Core::new(cfg).notifications().volume, 28);
+}
+
+#[tokio::test]
+async fn settings_backup_captures_saved_values_without_mutating_them() {
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = config(temp.path());
+    seed(&cfg, model::parse_articles(HYBRID).unwrap());
+    let core = Core::new(cfg.clone());
+    core.set_interval(75).await.unwrap();
+    core.set_user_agent("Custom Chrome").await.unwrap();
+    core.set_interests(Interests {
+        keywords: vec!["SSD".into()],
+        notify_only_matches: true,
+    })
+    .unwrap();
+    core.set_notifications(NotificationSettings {
+        enabled: true,
+        sound_enabled: false,
+        volume: 43,
+    })
+    .unwrap();
+    let before = core.snapshot();
+    let articles = std::fs::read(cfg.directory.join("articles.json")).unwrap();
+    let settings = core.settings_backup().await.unwrap();
+    assert_eq!(
+        settings,
+        json!({
+            "collection": {"intervalSeconds":75,"userAgent":"Custom Chrome"},
+            "interests": {"keywords":["SSD"],"notifyOnlyMatches":true},
+            "notifications": {"enabled":true,"soundEnabled":false,"volume":43},
+            "backup": {"directory":null},
+        })
+    );
+    assert_eq!(core.snapshot(), before);
+    assert_eq!(
+        std::fs::read(cfg.directory.join("articles.json")).unwrap(),
+        articles
+    );
+    std::fs::write(cfg.directory.join("settings.json"), "broken").unwrap();
+    assert!(core.settings_backup().await.is_err());
+}
+
+#[tokio::test]
+async fn choosing_a_backup_directory_only_saves_the_location_and_survives_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = config(temp.path());
+    let default = temp.path().join("install");
+    let selected = temp.path().join("selected");
+    std::fs::create_dir(&selected).unwrap();
+    let core = Core::new(cfg.clone());
+    assert_eq!(core.backup_directory(&default).unwrap(), default);
+    core.set_backup_directory(&selected).unwrap();
+    assert_eq!(core.backup_directory(&default).unwrap(), selected);
+    assert_eq!(std::fs::read_dir(&selected).unwrap().count(), 0);
+    let restored = Core::new(cfg);
+    assert_eq!(restored.backup_directory(&default).unwrap(), selected);
+    assert_eq!(
+        restored.settings_backup().await.unwrap()["backup"]["directory"],
+        json!(selected)
+    );
+    assert!(restored
+        .set_backup_directory(&temp.path().join("missing"))
+        .is_err());
+    assert_eq!(restored.backup_directory(&default).unwrap(), selected);
+    assert!(restored.reset_settings().await.unwrap().is_empty());
+    assert_eq!(restored.backup_directory(&default).unwrap(), default);
+}
+
+#[tokio::test]
 async fn settings_reset_reuses_first_run_defaults_and_preserves_collected_data() {
     let temp = tempfile::tempdir().unwrap();
     let cfg = config(temp.path());
@@ -391,6 +482,7 @@ async fn settings_reset_reuses_first_run_defaults_and_preserves_collected_data()
     core.set_notifications(NotificationSettings {
         enabled: false,
         sound_enabled: false,
+        volume: 17,
     })
     .unwrap();
 
@@ -423,6 +515,7 @@ async fn settings_reset_reuses_first_run_defaults_and_preserves_collected_data()
         );
         let notifications = instance.notifications();
         assert!(notifications.enabled && notifications.sound_enabled);
+        assert_eq!(notifications.volume, NotificationSettings::default().volume);
     }
     assert_eq!(std::fs::read(&article_path).unwrap(), article_bytes);
     assert_eq!(std::fs::read(&thumbnail).unwrap(), b"thumbnail");
@@ -604,6 +697,10 @@ async fn attaching_to_a_compatible_external_api_does_not_stop_it_or_change_its_u
     assert_eq!(category["articles"][0]["id"], "299");
     client.set_interval(67).await.unwrap();
     assert_eq!(server.status().interval_seconds, 67);
+    assert_eq!(
+        client.settings_backup().await.unwrap()["collection"]["intervalSeconds"],
+        model::DEFAULT_INTERVAL_SECONDS
+    );
     client.stop().await.unwrap();
     assert!(server.status().running);
     assert_eq!(server.list(1, 0, false, None).await.unwrap()["total"], 4);

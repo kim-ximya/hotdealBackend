@@ -157,6 +157,9 @@
             <form id="notification-form">
               <label class="check-setting"><input id="notifications-enabled" type="checkbox" checked disabled> 새 게시글 플로팅 알림</label>
               <label class="check-setting"><input id="notification-sound" type="checkbox" checked disabled> 작은 알림음 함께 재생</label>
+              <label for="notification-volume">알림 음량 <output id="notification-volume-value" for="notification-volume">100%</output></label>
+              <input id="notification-volume" type="range" min="0" max="100" step="1" value="100" aria-describedby="notification-volume-help" disabled>
+              <p id="notification-volume-help" class="help">슬라이더를 놓으면 음량이 자동으로 저장됩니다. 0%는 무음입니다.</p>
               <p class="help">수집 후 새 글을 발견하면 트레이에 숨긴 상태에서도 표시합니다. 여러 글은 한 알림으로 묶습니다.</p>
               <p class="help">관심 품목만 알림을 받으려면 상단의 관심 품목 탭에서 알림 범위를 변경하세요.</p>
               <button id="save-notifications" type="submit" class="primary" disabled>알림 설정 저장</button>
@@ -199,6 +202,18 @@
               <p class="setting-description">수집, 알림, 자동 실행, 관심 품목과 목록 표시 설정을 기본값으로 되돌립니다.</p>
               <button id="reset-settings" type="button" class="danger" aria-describedby="reset-settings-help" disabled>수집기 설정 초기화</button>
               <p id="reset-settings-help" class="help">수집 서버가 중지된 상태에서 실행할 수 있습니다.</p>
+            </article>
+            <article class="setting-card">
+              <div class="setting-card-heading"><h3>현재 설정 백업</h3><span class="tag">JSON</span></div>
+              <p class="setting-description">저장된 설정과 현재 목록 표시 상태를 파일로 보관합니다.</p>
+              <p class="help">백업 파일 생성 위치 · 기본값은 앱 설치 폴더입니다.</p>
+              <p id="backup-directory" class="path">저장 위치를 확인하고 있습니다.</p>
+              <div class="backup-actions">
+                <button id="backup-settings" type="button">백업 하기</button>
+                <button id="backup-settings-choose" type="button">백업 폴더 선택</button>
+                <button id="open-backup-folder" type="button">백업 폴더 열기</button>
+              </div>
+              <p id="backup-status" class="help" role="status">백업할 때마다 날짜와 시간이 포함된 새 파일을 만듭니다.</p>
             </article>
           </div>
           </div>

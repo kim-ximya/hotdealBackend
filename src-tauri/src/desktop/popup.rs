@@ -49,6 +49,7 @@ pub fn show(app: &AppHandle, rows: Vec<Article>, test: bool) -> Result<()> {
     if (!test && rows.is_empty()) || state.shutting.load(Ordering::Acquire) {
         return Ok(());
     }
+    let notifications = state.core.notifications();
     let (payload, create, visible) = {
         let mut popup = state.popup.lock().unwrap();
         if popup.closing {
@@ -85,7 +86,8 @@ pub fn show(app: &AppHandle, rows: Vec<Article>, test: bool) -> Result<()> {
                 .collect::<Vec<_>>())
         };
         let payload = json!({"sequence":popup.sequence,"total":if test { 1 } else { popup.rows.len() },
-            "test":test,"articles":articles,"sound":!cfg!(windows) && state.core.notifications().sound_enabled});
+            "test":test,"articles":articles,"sound":!cfg!(windows) && notifications.sound_enabled && notifications.volume > 0,
+            "volume": notifications.volume});
         popup.payload = Some(payload.clone());
         let create = !popup.building && app.get_webview_window(LABEL).is_none();
         if create {
@@ -122,9 +124,7 @@ pub fn show(app: &AppHandle, rows: Vec<Article>, test: bool) -> Result<()> {
             reposition(app);
             let _ = window.show();
             let _ = app.emit_to(LABEL, "hotdeal:notification", payload);
-            if state.core.notifications().sound_enabled {
-                chime();
-            }
+            chime(app);
             arm(app);
         }
     }
@@ -228,9 +228,7 @@ pub async fn action(
             if payload.is_some() {
                 reposition(app);
                 window.show().map_err(|e| e.to_string())?;
-                if state.core.notifications().sound_enabled {
-                    chime();
-                }
+                chime(app);
                 arm(app);
             }
             Ok(payload.unwrap_or(Value::Null))
@@ -396,16 +394,11 @@ async fn settle(app: &AppHandle, window: &WebviewWindow, x: Option<f64>) -> Resu
 }
 
 #[cfg(windows)]
-fn chime() {
-    use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
-    static WAV: &[u8] = include_bytes!("../../../desktop/assets/notification.wav");
-    unsafe {
-        PlaySoundW(
-            WAV.as_ptr().cast(),
-            std::ptr::null_mut(),
-            SND_ASYNC | SND_MEMORY | SND_NODEFAULT,
-        );
+fn chime(app: &AppHandle) {
+    let settings = app.state::<Desktop>().core.notifications();
+    if settings.sound_enabled {
+        crate::audio::play(settings.volume);
     }
 }
 #[cfg(not(windows))]
-fn chime() {}
+fn chime(_: &AppHandle) {}

@@ -2,8 +2,8 @@ use crate::{
     api,
     browser::{BrowserStatus, Collector},
     model::{
-        self, Article, Articles, Config, Interests, NewArticles, NotificationSettings, CHANNEL,
-        DEFAULT_INTERVAL_SECONDS,
+        self, Article, Articles, BackupSettings, Config, Interests, NewArticles,
+        NotificationSettings, CHANNEL, DEFAULT_INTERVAL_SECONDS,
     },
     Result,
 };
@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use std::{
     fs::{self, File, OpenOptions},
     net::Ipv4Addr,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
@@ -28,6 +29,7 @@ const INTERVAL_SETTINGS: &str = "settings.json";
 const BROWSER_SETTINGS: &str = "browser-settings.json";
 const INTEREST_SETTINGS: &str = "interest-settings.json";
 const NOTIFICATION_SETTINGS: &str = "notification-settings.json";
+const BACKUP_SETTINGS: &str = "backup-settings.json";
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -286,7 +288,20 @@ impl Core {
         self.data().notifications.clone()
     }
     pub fn set_notifications(&self, value: NotificationSettings) -> Result<NotificationSettings> {
+        let value = value.validate()?;
         let mut data = self.data();
+        model::write_json(&self.config().user_data.join(NOTIFICATION_SETTINGS), &value)?;
+        data.notifications = value.clone();
+        Ok(value)
+    }
+
+    pub fn set_notification_volume(&self, volume: u8) -> Result<NotificationSettings> {
+        let mut data = self.data();
+        let value = NotificationSettings {
+            volume,
+            ..data.notifications.clone()
+        }
+        .validate()?;
         model::write_json(&self.config().user_data.join(NOTIFICATION_SETTINGS), &value)?;
         data.notifications = value.clone();
         Ok(value)
@@ -496,6 +511,41 @@ impl Core {
         Ok(self.snapshot())
     }
 
+    pub fn backup_directory(&self, default: &Path) -> Result<PathBuf> {
+        let _data = self.data();
+        Ok(load_backup_settings(self.config())?
+            .directory
+            .unwrap_or_else(|| default.to_path_buf()))
+    }
+
+    pub fn set_backup_directory(&self, directory: &Path) -> Result<()> {
+        if !directory.is_absolute() || !directory.is_dir() {
+            return Err("백업 폴더를 찾을 수 없습니다. 저장 위치를 확인하세요.".into());
+        }
+        let _data = self.data();
+        model::write_json(
+            &self.config().user_data.join(BACKUP_SETTINGS),
+            &BackupSettings {
+                directory: Some(directory.to_path_buf()),
+            },
+        )
+    }
+
+    pub async fn settings_backup(&self) -> Result<Value> {
+        let _running = self.0.running.lock().await;
+        let _data = self.data();
+        let config = self.config();
+        Ok(json!({
+            "collection": {
+                "intervalSeconds": load_interval(config)?,
+                "userAgent": load_user_agent(config)?,
+            },
+            "interests": load_interests(config)?,
+            "notifications": load_notifications(config)?,
+            "backup": load_backup_settings(config)?,
+        }))
+    }
+
     pub async fn reset_settings(&self) -> Result<Vec<String>> {
         let running = self.0.running.lock().await;
         if running.is_some() {
@@ -512,6 +562,7 @@ impl Core {
                 (&config.directory, BROWSER_SETTINGS, "User-Agent"),
                 (&config.user_data, INTEREST_SETTINGS, "관심 품목"),
                 (&config.user_data, NOTIFICATION_SETTINGS, "알림"),
+                (&config.user_data, BACKUP_SETTINGS, "백업 폴더"),
             ] {
                 if let Err(error) = fs::remove_file(directory.join(name)) {
                     if error.kind() != std::io::ErrorKind::NotFound {
@@ -1061,7 +1112,22 @@ fn load_interests(config: &Config) -> Result<Interests> {
 }
 
 fn load_notifications(config: &Config) -> Result<NotificationSettings> {
-    Ok(model::read_json(&config.user_data.join(NOTIFICATION_SETTINGS))?.unwrap_or_default())
+    model::read_json::<NotificationSettings>(&config.user_data.join(NOTIFICATION_SETTINGS))?
+        .unwrap_or_default()
+        .validate()
+}
+
+fn load_backup_settings(config: &Config) -> Result<BackupSettings> {
+    let settings: BackupSettings =
+        model::read_json(&config.user_data.join(BACKUP_SETTINGS))?.unwrap_or_default();
+    if settings
+        .directory
+        .as_ref()
+        .is_some_and(|path| !path.is_absolute())
+    {
+        return Err("저장된 백업 폴더 경로가 올바르지 않습니다.".into());
+    }
+    Ok(settings)
 }
 
 struct ListView<'a> {

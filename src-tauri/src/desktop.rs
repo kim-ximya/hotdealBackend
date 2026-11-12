@@ -3,6 +3,7 @@ mod startup;
 mod updates;
 
 use crate::{
+    backup::{self, ArticleListPreferences},
     core::{Core, Event},
     model::{self, Config, Interests, NotificationSettings},
     Result,
@@ -22,6 +23,7 @@ use tauri::{
     AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 const TRAY: &str = "hotdeal";
@@ -127,6 +129,20 @@ struct Query {
     interest_only: bool,
     category: Option<String>,
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BackupRequest {
+    article_list: ArticleListPreferences,
+}
+
+fn backup_directory() -> Result<PathBuf> {
+    std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "앱 설치 폴더를 찾지 못했습니다.".into())
+}
 impl Default for Query {
     fn default() -> Self {
         Self {
@@ -187,6 +203,55 @@ async fn desktop_action(
                 .await
         }
         "resetArticles" => state.core.reset_articles().await,
+        "backupLocation" => Ok(json!(state.core.backup_directory(&backup_directory()?)?)),
+        "openBackupFolder" => {
+            let directory = state.core.backup_directory(&backup_directory()?)?;
+            if !directory.is_dir() {
+                return Err("백업 폴더를 찾을 수 없습니다. 저장 위치를 확인하세요.".into());
+            }
+            app.opener()
+                .open_path(directory.to_string_lossy(), None::<&str>)
+                .map_err(|e| e.to_string())?;
+            Ok(Value::Null)
+        }
+        "chooseBackupFolder" => {
+            let default = backup_directory()?;
+            let directory = state.core.backup_directory(&default).unwrap_or(default);
+            let (send, receive) = tokio::sync::oneshot::channel();
+            app.dialog()
+                .file()
+                .set_parent(&window)
+                .set_title("설정 백업 위치 선택")
+                .set_directory(&directory)
+                .pick_folder(move |path| {
+                    let _ = send.send(path);
+                });
+            let Some(path) = receive.await.map_err(|e| e.to_string())? else {
+                return Ok(Value::Null);
+            };
+            let directory = path.into_path().map_err(|e| e.to_string())?;
+            state.core.set_backup_directory(&directory)?;
+            Ok(json!(directory))
+        }
+        "backupSettings" => {
+            let request: BackupRequest =
+                serde_json::from_value(value).map_err(|_| "설정 백업 요청이 올바르지 않습니다.")?;
+            request.article_list.validate()?;
+            let directory = state.core.backup_directory(&backup_directory()?)?;
+            let mut settings = state.core.settings_backup().await?;
+            settings["articleList"] = json!(request.article_list);
+            settings["startup"] = startup::read()?;
+            let path = backup::write(
+                &directory,
+                &app.package_info().version.to_string(),
+                settings,
+            )
+            .map_err(|e| {
+                format!("설정 백업을 저장하지 못했습니다. 백업 폴더 선택에서 저장 위치를 변경하세요. {e}")
+            })?;
+            state.core.log("info", "설정 백업 파일을 저장했습니다.");
+            Ok(json!({"path": path, "directory": directory}))
+        }
         "resetSettings" => {
             let mut errors = state.core.reset_settings().await?;
             let startup = match startup::reset() {
@@ -268,6 +333,17 @@ async fn desktop_action(
             Ok(result)
         }
         "notificationSettings" => Ok(json!(state.core.notifications())),
+        "notificationVolume" => {
+            let volume = value
+                .as_u64()
+                .filter(|volume| *volume <= 100)
+                .ok_or("알림 음량은 0~100 사이의 정수여야 합니다.")?;
+            let settings = state.core.set_notification_volume(volume as u8)?;
+            state
+                .core
+                .log("info", format!("알림 음량을 {volume}%로 저장했습니다."));
+            Ok(json!(settings))
+        }
         "setNotificationSettings" => {
             let settings: NotificationSettings =
                 serde_json::from_value(value).map_err(|_| "알림 설정이 올바르지 않습니다.")?;
@@ -455,6 +531,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             desktop_action,

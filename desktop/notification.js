@@ -29,7 +29,7 @@ function render(payload) {
   }
   $('articles').replaceChildren(fragment);
   if (payload.sound) {
-    $('chime').volume = 0.35;
+    $('chime').volume = 0.35 * (payload.volume ?? 100) / 100;
     $('chime').currentTime = 0;
     $('chime').play().catch(() => {
       $('summary').textContent += ' · 소리 재생 실패';

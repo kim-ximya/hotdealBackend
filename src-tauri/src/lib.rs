@@ -1,4 +1,8 @@
 pub mod api;
+#[cfg(any(all(windows, feature = "desktop"), test))]
+mod audio;
+#[cfg(any(feature = "desktop", test))]
+mod backup;
 pub mod browser;
 pub mod core;
 pub mod model;

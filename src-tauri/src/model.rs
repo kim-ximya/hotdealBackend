@@ -345,6 +345,12 @@ impl NewArticles {
 
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupSettings {
+    pub directory: Option<PathBuf>,
+}
+
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Interests {
     pub keywords: Vec<String>,
     pub notify_only_matches: bool,
@@ -355,13 +361,28 @@ pub struct Interests {
 pub struct NotificationSettings {
     pub enabled: bool,
     pub sound_enabled: bool,
+    #[serde(default = "default_notification_volume")]
+    pub volume: u8,
+}
+fn default_notification_volume() -> u8 {
+    100
 }
 impl Default for NotificationSettings {
     fn default() -> Self {
         Self {
             enabled: true,
             sound_enabled: true,
+            volume: default_notification_volume(),
         }
+    }
+}
+
+impl NotificationSettings {
+    pub fn validate(self) -> Result<Self> {
+        if self.volume > 100 {
+            return Err("알림 음량은 0~100 사이의 정수여야 합니다.".into());
+        }
+        Ok(self)
     }
 }
 
